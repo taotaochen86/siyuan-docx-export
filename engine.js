@@ -2656,6 +2656,9 @@
       function esc(s) {
         return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }
+      function cnSpacing(s) {
+        return String(s == null ? "" : s).replace(/([\u4e00-\u9fa5])[ 　]+([A-Za-z0-9])/g, "$1$2").replace(/([A-Za-z0-9])[ 　]+([\u4e00-\u9fa5])/g, "$1$2");
+      }
       function rPr(opts) {
         const o = opts || {};
         const cn = o.mono ? MONO : o.cn || CN_SONG;
@@ -2673,7 +2676,8 @@
       }
       function runXml(text, opts) {
         const t = String(text == null ? "" : text);
-        return `<w:r>${rPr(opts)}<w:t xml:space="preserve">${esc(t)}</w:t></w:r>`;
+        const shown = opts && opts.mono ? t : cnSpacing(t);
+        return `<w:r>${rPr(opts)}<w:t xml:space="preserve">${esc(shown)}</w:t></w:r>`;
       }
       function pPr(opts) {
         const o = opts || {};
@@ -3497,7 +3501,7 @@
       function numberingXml() {
         const lvl = (ilvl, fmt, text, sz) => `
     <w:lvl w:ilvl="${ilvl}">
-      <w:start w:val="1"/><w:numFmt w:val="${fmt}"/><w:lvlText w:val="${text}"/><w:lvlJc w:val="left"/>
+      <w:start w:val="1"/><w:numFmt w:val="${fmt}"/><w:suff w:val="space"/><w:lvlText w:val="${text}"/><w:lvlJc w:val="left"/>
       <w:pPr><w:ind w:left="0" w:firstLine="0"/></w:pPr>
       <w:rPr><w:rFonts w:ascii="${D.CN_HEI}" w:hAnsi="${D.CN_HEI}" w:eastAsia="${D.CN_HEI}"/><w:b/><w:sz w:val="${sz * 2}"/></w:rPr>
     </w:lvl>`;

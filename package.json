@@ -1,6 +1,6 @@
 {
   "name": "siyuan-docx-export",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "SiYuan plugin: export document tree to a standardized .docx, fully in the browser",
   "private": true,
   "scripts": {

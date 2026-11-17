@@ -11,6 +11,14 @@ function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+// 排版间距：删除汉字与英文/数字之间的半角/全角空格；
+// 数字↔字母（单位，如 10 cm、m 3）、英文内部、汉字之间的空格保留。
+function cnSpacing(s) {
+  return String(s == null ? "" : s)
+    .replace(/([\u4e00-\u9fa5])[ 　]+([A-Za-z0-9])/g, "$1$2")
+    .replace(/([A-Za-z0-9])[ 　]+([\u4e00-\u9fa5])/g, "$1$2");
+}
+
 // ---------------- run / rPr ----------------
 function rPr(opts) {
   const o = opts || {};
@@ -30,7 +38,8 @@ function rPr(opts) {
 
 function runXml(text, opts) {
   const t = String(text == null ? "" : text);
-  return `<w:r>${rPr(opts)}<w:t xml:space="preserve">${esc(t)}</w:t></w:r>`;
+  const shown = (opts && opts.mono) ? t : cnSpacing(t);
+  return `<w:r>${rPr(opts)}<w:t xml:space="preserve">${esc(shown)}</w:t></w:r>`;
 }
 
 // ---------------- paragraph pPr ----------------

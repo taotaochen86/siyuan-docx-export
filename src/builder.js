@@ -300,7 +300,7 @@ function stylesXml() {
 function numberingXml() {
   const lvl = (ilvl, fmt, text, sz) => `
     <w:lvl w:ilvl="${ilvl}">
-      <w:start w:val="1"/><w:numFmt w:val="${fmt}"/><w:lvlText w:val="${text}"/><w:lvlJc w:val="left"/>
+      <w:start w:val="1"/><w:numFmt w:val="${fmt}"/><w:suff w:val="space"/><w:lvlText w:val="${text}"/><w:lvlJc w:val="left"/>
       <w:pPr><w:ind w:left="0" w:firstLine="0"/></w:pPr>
       <w:rPr><w:rFonts w:ascii="${D.CN_HEI}" w:hAnsi="${D.CN_HEI}" w:eastAsia="${D.CN_HEI}"/><w:b/><w:sz w:val="${sz * 2}"/></w:rPr>
     </w:lvl>`;
