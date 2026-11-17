@@ -32,12 +32,12 @@ check("mono 内空格保留", v3.includes("x  y"), v3);
 const v4 = visible(D.buildInline("见表 4-1 和图 2 所示", {}, 12, false, false, {}, null));
 check("题注标签空格保留", v4.includes("表 4-1") && v4.includes("图 2"), v4);
 
-// 4. 编号分隔：numbering 每层 suff=space（不跳默认制表位）
+// 4. 标题编号为静态文本：不绑 Word 列表（无 numPr/numId/abstractNum/lvl），编号原文保留
 const builderSrc = fs.readFileSync(path.join(__dirname, "../src/builder.js"), "utf8");
-const suffCount = (builderSrc.match(/<w:suff w:val="space"\/>/g) || []).length;
-const lvlCalls = (builderSrc.match(/\$\{lvl\(/g) || []).length;
-check("编号模板为 space 分隔", suffCount === 1, `got ${suffCount}`);
-check("编号 5 层均走该模板", lvlCalls === 5, `got ${lvlCalls}`);
+const mdSrc = fs.readFileSync(path.join(__dirname, "../src/markdown.js"), "utf8");
+check("标题路径无 numPr/numId 注入", !/<w:numPr/.test(builderSrc), "numPr 仍存在");
+check("numbering.xml 为空壳（无 abstractNum/lvl）", !/<w:abstractNum|<w:lvl /.test(builderSrc), "仍含列表定义");
+check("解析层标题不再剥编号", !/(?<!function )stripHeadingNum\(/.test(mdSrc), "仍调用 stripHeadingNum");
 
 console.log("\n可见文本: " + v);
 console.log("可见文本2: " + v2);

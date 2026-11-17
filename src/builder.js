@@ -20,12 +20,13 @@ function pageBreakPara() {
 // level 2..5 -> Heading2..5（一、/（一）/1./(1）自动编号）
 // noNum: 该标题在章节结构里是"悬空"的（出现在全书第一个一级标题之前，如书名页后的「序言」），
 //        用 numId=0 去掉编号。否则 Word 会把它隐式计入上级编号，导致其后所有章号 +1。
-function renderHeading(text, level, noNum) {
+function renderHeading(text, level) {
   const lv = Math.min(Math.max(level, 1), 5);
   const size = HEADING_SIZES[lv] || 12;
   const clean = M.stripHtml(text).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
   if (!clean) return "";
-  const xml = para(
+  // 标题编号保留思源原文（静态文本），只套 Heading 样式，不绑 Word 列表。
+  return para(
     {
       style: "Heading" + lv,
       jc: "left",
@@ -33,10 +34,6 @@ function renderHeading(text, level, noNum) {
     },
     D.runXml(clean, { cn: D.CN_HEI, en: D.CN_HEI, size, bold: true, color: "000000" })
   );
-  if (!noNum) return xml;
-  // numId=0 是 OOXML 标准的"移除编号"写法；numPr 必须紧跟 pStyle 之后，保持 pPr 子元素顺序合法
-  return xml.replace(/(<w:pStyle w:val="Heading\d"\/>)/,
-    '$1<w:numPr><w:ilvl w:val="0"/><w:numId w:val="0"/></w:numPr>');
 }
 
 // 不参与自动编号的大标题（节级文档、Reference 等）
@@ -47,12 +44,6 @@ function renderDocHeading(text) {
     { style: "HeadingDoc", jc: "left", spacing: { before: 240, after: 160, line: 240, lineRule: "auto" } },
     D.runXml(clean, { cn: D.CN_HEI, en: D.CN_HEI, size: 16, bold: true, color: "000000" })
   );
-}
-
-// 「第3章 AAAA」-> 「AAAA」：章号交给 Word 多级列表生成，避免重号
-function stripChapterNum(title) {
-  const out = String(title || "").replace(/^\s*第\s*[0-9一二三四五六七八九十百零两]+\s*[章]\s*/, "").trim();
-  return out || String(title || "").trim();
 }
 
 // ---------------- 正文 ----------------
@@ -258,8 +249,7 @@ function renderBlocks(blocks, refsByKey, bmId, ctx) {
     const b = blocks[n];
     switch (b.type) {
       case "heading": {
-        const orphan = ctx && !ctx.seenH1 && b.level > 1;
-        out += renderHeading(b.text, b.level, orphan);
+        out += renderHeading(b.text, b.level);
         if (ctx && b.level === 1) ctx.seenH1 = true;
         break;
       }
@@ -287,9 +277,7 @@ function stylesXml() {
     <w:name w:val="heading ${lv}"/>
     <w:basedOn w:val="Normal"/><w:next w:val="Normal"/>
     <w:uiPriority w:val="9"/><w:qFormat/>
-    <w:pPr><w:keepNext/><w:outlineLvl w:val="${lv - 1}"/>
-      <w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="1"/></w:numPr>
-    </w:pPr>
+    <w:pPr><w:keepNext/><w:outlineLvl w:val="${lv - 1}"/></w:pPr>
     <w:rPr><w:rFonts w:ascii="${D.CN_HEI}" w:hAnsi="${D.CN_HEI}" w:eastAsia="${D.CN_HEI}"/><w:b/><w:color w:val="000000"/><w:sz w:val="${sz * 2}"/></w:rPr>
   </w:style>`;
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -308,30 +296,14 @@ function stylesXml() {
     <w:pPr><w:keepNext/><w:outlineLvl w:val="0"/></w:pPr>
     <w:rPr><w:rFonts w:ascii="${D.CN_HEI}" w:hAnsi="${D.CN_HEI}" w:eastAsia="${D.CN_HEI}"/><w:b/><w:color w:val="000000"/><w:sz w:val="32"/></w:rPr>
   </w:style>
-  ${head(1, 16, 0)}${head(2, 14, 1)}${head(3, 13, 2)}${head(4, 12, 3)}${head(5, 12, 4)}
+  ${head(1, 16)}${head(2, 14)}${head(3, 13)}${head(4, 12)}${head(5, 12)}
 </w:styles>`;
 }
 
-// 多级列表：L1 第N章 / L2 一、/ L3 （一）/ L4 1. / L5 (1）
+// 标题编号保留思源写死的静态文本，不再使用 Word 多级列表；numbering.xml 仅留空壳以兼容打包链路
 function numberingXml() {
-  const lvl = (ilvl, fmt, text, sz, left) => `
-    <w:lvl w:ilvl="${ilvl}">
-      <w:start w:val="1"/><w:numFmt w:val="${fmt}"/><w:suff w:val="space"/><w:lvlText w:val="${text}"/><w:lvlJc w:val="left"/>
-      <w:pPr><w:tabs><w:tab w:val="left" w:pos="${left}"/></w:tabs><w:ind w:left="${left}" w:hanging="${left}"/></w:pPr>
-      <w:rPr><w:rFonts w:ascii="${D.CN_HEI}" w:hAnsi="${D.CN_HEI}" w:eastAsia="${D.CN_HEI}"/><w:b/><w:sz w:val="${sz * 2}"/></w:rPr>
-    </w:lvl>`;
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:abstractNum w:abstractNumId="0">
-    <w:multiLevelType w:val="multilevel"/>
-    ${lvl(0, "decimal", "第%1章", 16, 720)}
-    ${lvl(1, "chineseCounting", "%2、", 14, 480)}
-    ${lvl(2, "chineseCounting", "（%3）", 13, 660)}
-    ${lvl(3, "decimal", "%4.", 12, 360)}
-    ${lvl(4, "decimal", "(%5）", 12, 480)}
-  </w:abstractNum>
-  <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
-</w:numbering>`;
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>`;
 }
 
 function buildDocument(raw, opts, refsByKey, assets) {
@@ -361,8 +333,8 @@ function buildDocument(raw, opts, refsByKey, assets) {
     const doc = docs[i];
     body += pageBreakPara();
     if (doc.level === 1 && doc.id !== refId) {
-      // 章级文档：Heading1 自动编号「第N章」，原文「第3章」前缀剥掉
-      body += renderHeading(stripChapterNum(doc.title), 1);
+      // 章级文档：标题原样保留「第N章 题名」（与思源一致的静态编号），只套 Heading1
+      body += renderHeading(doc.title, 1);
       ctx.seenH1 = true;
     } else {
       body += renderDocHeading(doc.title);

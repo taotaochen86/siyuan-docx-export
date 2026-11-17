@@ -71,34 +71,6 @@ function mapLevel(docLevel, hashN) {
   return Math.min(hashN + 1, 5);
 }
 
-// 所有可能出现在标题前的编号形态（不按层级绑定：树文联动编号与正文层级会错位，
-// 如「## 二、论文题名」在 Word 里是 Heading3，但编号形态是「二、」）
-const NUM_ALL = [
-  /^第\s*[0-9一二三四五六七八九十百零两]+\s*[章节]\s*/,
-  /^[（(]\s*[一二三四五六七八九十百零两]+\s*[）)]\s*/,
-  /^[（(]\s*\d+(?:\.\d+)*\s*[）)]\s*/,
-  /^[一二三四五六七八九十百零两]+、\s*/,
-  /^\d+(?:\.\d+)*\.?\s+/,
-  /^\d+\.\s+/,
-  /^\d+、\s*/,
-];
-
-// 剥掉标题里已有的手工/插件编号（tree-doc-numbering 写进正文的那种），
-// 交给 Word 多级列表自动生成，避免「一、 一、 标题」重号。
-// 最多连剥 3 层：有的标题同时带「树编号 + 正文编号」，如「3.1.4.40.1 1 标题」。
-function stripHeadingNum(level, text) {
-  let t = String(text || "").trim();
-  for (let k = 0; k < 3; k++) {
-    let hit = false;
-    for (const re of NUM_ALL) {
-      const next = t.replace(re, "").trim();
-      if (next && next !== t) { t = next; hit = true; break; }
-    }
-    if (!hit) break;
-  }
-  return t || String(text || "").trim();
-}
-
 // ---------- 公式 ----------
 function splitMath(text) {
   let num = "";
@@ -173,7 +145,9 @@ function parseDoc(meta, md, anchors, refId) {
         if (meta.level === 0 || normTitle(hm[2]) === normTitle(meta.title)) { i += 1; continue; }
       }
       const level = mapLevel(meta.level, hashN);
-      const text = stripHeadingNum(level, stripHtml(hm[2]).replace(/\u200d/g, "").trim());
+      // 编号（第N章 / 一、 / （一） / 1. / (1））是 tree-doc-numbering 写死在标题文本里的，
+      // 严格对齐思源：原样保留为普通标题文本，不再剥号交给 Word 列表生成。
+      const text = stripHtml(hm[2]).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
       blocks.push({ type: "heading", level, text });
       i += 1; continue;
     }
@@ -201,5 +175,5 @@ function parseDoc(meta, md, anchors, refId) {
 
 module.exports = {
   stripHtml, collectAnchors, parseDoc, parseReference, mapLevel,
-  stripHeadingNum, splitMath, isCaption,
+  splitMath, isCaption,
 };

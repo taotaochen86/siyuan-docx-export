@@ -3085,31 +3085,6 @@
       function mapLevel(docLevel, hashN) {
         return Math.min(hashN + 1, 5);
       }
-      var NUM_ALL = [
-        /^第\s*[0-9一二三四五六七八九十百零两]+\s*[章节]\s*/,
-        /^[（(]\s*[一二三四五六七八九十百零两]+\s*[）)]\s*/,
-        /^[（(]\s*\d+(?:\.\d+)*\s*[）)]\s*/,
-        /^[一二三四五六七八九十百零两]+、\s*/,
-        /^\d+(?:\.\d+)*\.?\s+/,
-        /^\d+\.\s+/,
-        /^\d+、\s*/
-      ];
-      function stripHeadingNum(level, text) {
-        let t = String(text || "").trim();
-        for (let k = 0; k < 3; k++) {
-          let hit = false;
-          for (const re of NUM_ALL) {
-            const next = t.replace(re, "").trim();
-            if (next && next !== t) {
-              t = next;
-              hit = true;
-              break;
-            }
-          }
-          if (!hit) break;
-        }
-        return t || String(text || "").trim();
-      }
       function splitMath(text) {
         let num = "";
         const m = /\\tag\{([^}]+)\}/.exec(text);
@@ -3190,7 +3165,7 @@
               }
             }
             const level = mapLevel(meta.level, hashN);
-            const text = stripHeadingNum(level, stripHtml(hm[2]).replace(/\u200d/g, "").trim());
+            const text = stripHtml(hm[2]).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
             blocks.push({ type: "heading", level, text });
             i += 1;
             continue;
@@ -3225,7 +3200,6 @@
         parseDoc,
         parseReference,
         mapLevel,
-        stripHeadingNum,
         splitMath,
         isCaption
       };
@@ -3245,23 +3219,18 @@
       function pageBreakPara() {
         return `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
       }
-      function renderHeading(text, level, noNum) {
+      function renderHeading(text, level) {
         const lv = Math.min(Math.max(level, 1), 5);
         const size = HEADING_SIZES[lv] || 12;
         const clean = M.stripHtml(text).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
         if (!clean) return "";
-        const xml = para(
+        return para(
           {
             style: "Heading" + lv,
             jc: "left",
             spacing: { before: lv <= 2 ? 200 : 120, after: 120, line: 240, lineRule: "auto" }
           },
           D.runXml(clean, { cn: D.CN_HEI, en: D.CN_HEI, size, bold: true, color: "000000" })
-        );
-        if (!noNum) return xml;
-        return xml.replace(
-          /(<w:pStyle w:val="Heading\d"\/>)/,
-          '$1<w:numPr><w:ilvl w:val="0"/><w:numId w:val="0"/></w:numPr>'
         );
       }
       function renderDocHeading(text) {
@@ -3271,10 +3240,6 @@
           { style: "HeadingDoc", jc: "left", spacing: { before: 240, after: 160, line: 240, lineRule: "auto" } },
           D.runXml(clean, { cn: D.CN_HEI, en: D.CN_HEI, size: 16, bold: true, color: "000000" })
         );
-      }
-      function stripChapterNum(title) {
-        const out = String(title || "").replace(/^\s*第\s*[0-9一二三四五六七八九十百零两]+\s*[章]\s*/, "").trim();
-        return out || String(title || "").trim();
       }
       function renderBody(text, refsByKey, listItem, ctx) {
         if (M.stripHtml(text).replace(/\u200d/g, "").trim() === "") return "";
@@ -3445,8 +3410,7 @@
           const b = blocks[n];
           switch (b.type) {
             case "heading": {
-              const orphan = ctx && !ctx.seenH1 && b.level > 1;
-              out += renderHeading(b.text, b.level, orphan);
+              out += renderHeading(b.text, b.level);
               if (ctx && b.level === 1) ctx.seenH1 = true;
               break;
             }
@@ -3487,9 +3451,7 @@
     <w:name w:val="heading ${lv}"/>
     <w:basedOn w:val="Normal"/><w:next w:val="Normal"/>
     <w:uiPriority w:val="9"/><w:qFormat/>
-    <w:pPr><w:keepNext/><w:outlineLvl w:val="${lv - 1}"/>
-      <w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="1"/></w:numPr>
-    </w:pPr>
+    <w:pPr><w:keepNext/><w:outlineLvl w:val="${lv - 1}"/></w:pPr>
     <w:rPr><w:rFonts w:ascii="${D.CN_HEI}" w:hAnsi="${D.CN_HEI}" w:eastAsia="${D.CN_HEI}"/><w:b/><w:color w:val="000000"/><w:sz w:val="${sz * 2}"/></w:rPr>
   </w:style>`;
         return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -3508,28 +3470,12 @@
     <w:pPr><w:keepNext/><w:outlineLvl w:val="0"/></w:pPr>
     <w:rPr><w:rFonts w:ascii="${D.CN_HEI}" w:hAnsi="${D.CN_HEI}" w:eastAsia="${D.CN_HEI}"/><w:b/><w:color w:val="000000"/><w:sz w:val="32"/></w:rPr>
   </w:style>
-  ${head(1, 16, 0)}${head(2, 14, 1)}${head(3, 13, 2)}${head(4, 12, 3)}${head(5, 12, 4)}
+  ${head(1, 16)}${head(2, 14)}${head(3, 13)}${head(4, 12)}${head(5, 12)}
 </w:styles>`;
       }
       function numberingXml() {
-        const lvl = (ilvl, fmt, text, sz, left) => `
-    <w:lvl w:ilvl="${ilvl}">
-      <w:start w:val="1"/><w:numFmt w:val="${fmt}"/><w:suff w:val="space"/><w:lvlText w:val="${text}"/><w:lvlJc w:val="left"/>
-      <w:pPr><w:tabs><w:tab w:val="left" w:pos="${left}"/></w:tabs><w:ind w:left="${left}" w:hanging="${left}"/></w:pPr>
-      <w:rPr><w:rFonts w:ascii="${D.CN_HEI}" w:hAnsi="${D.CN_HEI}" w:eastAsia="${D.CN_HEI}"/><w:b/><w:sz w:val="${sz * 2}"/></w:rPr>
-    </w:lvl>`;
         return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:abstractNum w:abstractNumId="0">
-    <w:multiLevelType w:val="multilevel"/>
-    ${lvl(0, "decimal", "\u7B2C%1\u7AE0", 16, 720)}
-    ${lvl(1, "chineseCounting", "%2\u3001", 14, 480)}
-    ${lvl(2, "chineseCounting", "\uFF08%3\uFF09", 13, 660)}
-    ${lvl(3, "decimal", "%4.", 12, 360)}
-    ${lvl(4, "decimal", "(%5\uFF09", 12, 480)}
-  </w:abstractNum>
-  <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
-</w:numbering>`;
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>`;
       }
       function buildDocument(raw, opts, refsByKey, assets) {
         const docs = raw.docs;
@@ -3554,7 +3500,7 @@
           const doc = docs[i];
           body += pageBreakPara();
           if (doc.level === 1 && doc.id !== refId) {
-            body += renderHeading(stripChapterNum(doc.title), 1);
+            body += renderHeading(doc.title, 1);
             ctx.seenH1 = true;
           } else {
             body += renderDocHeading(doc.title);
