@@ -2,7 +2,7 @@ const { Plugin, Dialog, showMessage } = require("siyuan");
 const siyuan = require("./siyuan");
 const builder = require("./builder");
 
-const ICON_SVG = `<svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M9.5 1h3.2L15 3.3V15H1V3.3L3.3 1h6.2zm.5 1H3.8L2 3.8V14h12V3.8L12.2 2H10zM4 6h8v1.2H4V6zm0 3h8v1.2H4V9zm0 3h5v1.2H4V12z"/></svg>`;
+const ICON_SVG = `<symbol id="iconDocxExport" viewBox="0 0 16 16"><path fill="currentColor" d="M9.5 1h3.2L15 3.3V15H1V3.3L3.3 1h6.2zm.5 1H3.8L2 3.8V14h12V3.8L12.2 2H10zM4 6h8v1.2H4V6zm0 3h8v1.2H4V9zm0 3h5v1.2H4V12z"/></symbol>`;
 
 module.exports = class DocxExport extends Plugin {
   async onload() {
@@ -10,8 +10,10 @@ module.exports = class DocxExport extends Plugin {
     this.eventBus.on("loaded-protyle-static", (e) => this.track(e));
     this.eventBus.on("switch-protyle", (e) => this.track(e));
 
+    this.addIcons(ICON_SVG);
+
     this.addTopBar({
-      icon: "iconExport",
+      icon: "iconDocxExport",
       title: "导出为规范 Word",
       position: "right",
       callback: () => this.openDialog(),
@@ -62,7 +64,7 @@ module.exports = class DocxExport extends Plugin {
     if (!/^\d{14}-[a-z0-9]{7}$/i.test(docId)) return;
     d.menu.addSeparator();
     d.menu.addItem({
-      icon: "iconExport",
+      icon: "iconDocxExport",
       label: "导出规范 Word",
       click: () => this.openDialog(docId),
     });
