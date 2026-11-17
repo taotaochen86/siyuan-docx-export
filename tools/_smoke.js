@@ -114,7 +114,8 @@ async function main() {
   console.log("字面 <sup>: " + cnt(/<sup>/gi, docXml) + "  <sub>: " + cnt(/<sub>/gi, docXml));
   console.log("vertAlign 上标: " + cnt(/superscript/g, docXml) + " 下标: " + cnt(/subscript/g, docXml));
   console.log("numbering suff=space: " + cnt(/w:suff w:val="space"/g, numXml));
-  console.log("SEQ 域: " + cnt(/SEQ /g, docXml) + "  REF 域: " + cnt(/REF /g, docXml));
+  console.log("SEQ 域: " + cnt(/SEQ /g, docXml) + "  REF 域: " + cnt(/REF /g, docXml) + "  STYLEREF: " + cnt(/STYLEREF/g, docXml));
+  console.log("SEQ 带 \\s 1 重置: " + cnt(/SEQ [^\s]+ \\?\*? ARABIC \\s 1/g, docXml));
   console.log("ZOTERO_ITEM: " + cnt(/ZOTERO_ITEM/g, docXml) + "  ZOTERO_BIBL: " + cnt(/ZOTERO_BIBL/g, docXml));
   console.log("fldChar begin: " + cnt(/fldCharType="begin"/g, docXml) + " end: " + cnt(/fldCharType="end"/g, docXml));
   console.log("表格: " + cnt(/<w:tbl>/g, docXml) + "  嵌入图片: " + cnt(/<a:blip/g, docXml));

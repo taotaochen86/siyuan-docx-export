@@ -98,8 +98,13 @@ function renderMath(code, num, anchor, bmId) {
   let inner = `<w:r><w:tab/></w:r>` + D.mathXml(code, { size: 12 });
   inner += `<w:r><w:tab/></w:r>`;
   if (name) inner += D.bookmarkStart(bmId, name);
+  const { chap, seq } = splitChapSeq(num);
   inner += D.runXml("(", { size: 12 });
-  inner += D.fieldRuns("SEQ \u5f0f \\* ARABIC", num, { size: 12 });
+  if (chap) {
+    inner += D.fieldRuns('STYLEREF "Heading 1" \\s', chap, { size: 12 });
+    inner += D.runXml("-", { size: 12 });
+  }
+  inner += D.fieldRuns(`SEQ \u5f0f \\* ARABIC \\s 1`, seq, { size: 12 });
   inner += D.runXml(")", { size: 12 });
   if (name) inner += D.bookmarkEnd(bmId);
   return `<w:p>${ppr}${inner}</w:p>`;
@@ -146,6 +151,12 @@ function renderImage(rel, ctx) {
   );
 }
 
+// 拆「4-1」-> 章 4、序 1；无连字符时章号为空、整段为序号
+function splitChapSeq(num) {
+  const i = String(num).indexOf("-");
+  return i > 0 ? { chap: num.slice(0, i), seq: num.slice(i + 1) } : { chap: "", seq: num };
+}
+
 function renderCaption(kind, num, title, anchor, bmId) {
   let inner = "";
   let start = "", end = "";
@@ -156,9 +167,15 @@ function renderCaption(kind, num, title, anchor, bmId) {
   }
   // 书签只覆盖「表/图/式 + 编号」，题名放到书签外。
   // 否则 F9 更新 REF 域时会把书签内全文（含题名）整条塞进正文。
+  const { chap, seq } = splitChapSeq(num);
   inner += start;
   inner += D.runXml(kind + " ", { size: 12, bold: true });
-  inner += D.fieldRuns(`SEQ ${kind} \\* ARABIC`, num, { size: 12, bold: true });
+  if (chap) {
+    // 章号：STYLEREF 取最近 Heading 1 编号；序号：SEQ 按级别 1 每章重置
+    inner += D.fieldRuns('STYLEREF "Heading 1" \\s', chap, { size: 12, bold: true });
+    inner += D.runXml("-", { size: 12, bold: true });
+  }
+  inner += D.fieldRuns(`SEQ ${kind} \\* ARABIC \\s 1`, seq, { size: 12, bold: true });
   inner += end;
   if (title) inner += D.runXml(" " + title, { size: 12, bold: true });
   return para(

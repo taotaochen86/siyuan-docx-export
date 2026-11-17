@@ -3313,8 +3313,13 @@
         let inner = `<w:r><w:tab/></w:r>` + D.mathXml(code, { size: 12 });
         inner += `<w:r><w:tab/></w:r>`;
         if (name) inner += D.bookmarkStart(bmId, name);
+        const { chap, seq } = splitChapSeq(num);
         inner += D.runXml("(", { size: 12 });
-        inner += D.fieldRuns("SEQ \u5F0F \\* ARABIC", num, { size: 12 });
+        if (chap) {
+          inner += D.fieldRuns('STYLEREF "Heading 1" \\s', chap, { size: 12 });
+          inner += D.runXml("-", { size: 12 });
+        }
+        inner += D.fieldRuns(`SEQ \u5F0F \\* ARABIC \\s 1`, seq, { size: 12 });
         inner += D.runXml(")", { size: 12 });
         if (name) inner += D.bookmarkEnd(bmId);
         return `<w:p>${ppr}${inner}</w:p>`;
@@ -3358,6 +3363,10 @@
           imageXml(rel, "", ctx, 12)
         );
       }
+      function splitChapSeq(num) {
+        const i = String(num).indexOf("-");
+        return i > 0 ? { chap: num.slice(0, i), seq: num.slice(i + 1) } : { chap: "", seq: num };
+      }
       function renderCaption(kind, num, title, anchor, bmId) {
         let inner = "";
         let start = "", end = "";
@@ -3366,9 +3375,14 @@
           start = D.bookmarkStart(bmId, name);
           end = D.bookmarkEnd(bmId);
         }
+        const { chap, seq } = splitChapSeq(num);
         inner += start;
         inner += D.runXml(kind + " ", { size: 12, bold: true });
-        inner += D.fieldRuns(`SEQ ${kind} \\* ARABIC`, num, { size: 12, bold: true });
+        if (chap) {
+          inner += D.fieldRuns('STYLEREF "Heading 1" \\s', chap, { size: 12, bold: true });
+          inner += D.runXml("-", { size: 12, bold: true });
+        }
+        inner += D.fieldRuns(`SEQ ${kind} \\* ARABIC \\s 1`, seq, { size: 12, bold: true });
         inner += end;
         if (title) inner += D.runXml(" " + title, { size: 12, bold: true });
         return para(
