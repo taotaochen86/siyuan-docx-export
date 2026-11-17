@@ -20,6 +20,7 @@
 | Zotero 书目 | 文末条目 → 跨段 `ADDIN ZOTERO_BIBL` 域 + `zot_<KEY>` 书签 |
 | 分页 | 每篇思源文档另起一页；可选封面（书名 / 作者 / 日期） |
 | 公式 | 上下标、希腊字母、`\frac`、`\sqrt` 轻量渲染为 Word run（**不生成 OMML**，见边界） |
+| HTML 上下标 | `<sup>…</sup>` / `<sub>…</sub>` → Word 上/下标 run（如 m<sup>3</sup>、ha<sup>-1</sup>），标签不留为文本 |
 
 ## 安装
 

@@ -2,7 +2,7 @@
   "name": "siyuan-docx-export",
   "author": "ttChen",
   "url": "https://github.com/taotaochen86/siyuan-docx-export",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "minAppVersion": "3.1.0",
   "backends": ["windows", "linux", "darwin"],
   "frontends": ["desktop", "desktop-window"],

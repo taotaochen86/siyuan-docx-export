@@ -2759,6 +2759,24 @@
       function marksXml(text, refs, size, baseBold, mono, refsByKey) {
         if (!text) return "";
         const out = [];
+        const vertRe = /<(sup|sub)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/g;
+        let last = 0, m;
+        while ((m = vertRe.exec(text)) !== null) {
+          if (m.index > last) out.push(boldMarks(text.slice(last, m.index), refs, size, baseBold, mono, refsByKey));
+          const vert = m[1] === "sup" ? "superscript" : "subscript";
+          out.push(vertXml(m[2], vert, size, baseBold, mono));
+          last = m.index + m[0].length;
+        }
+        if (last < text.length) out.push(boldMarks(text.slice(last), refs, size, baseBold, mono, refsByKey));
+        return out.join("");
+      }
+      function vertXml(text, vert, size, bold, mono) {
+        const inner = codeItalic(text, size, bold, mono);
+        return inner.replace(/(<w:rFonts[^\/]*\/>)/g, `$1<w:vertAlign w:val="${vert}"/>`);
+      }
+      function boldMarks(text, refs, size, baseBold, mono, refsByKey) {
+        if (!text) return "";
+        const out = [];
         const re = /\*\*([^*]+)\*\*/g;
         let last = 0, m;
         while ((m = re.exec(text)) !== null) {

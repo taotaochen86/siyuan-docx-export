@@ -146,6 +146,28 @@ function drawingXml(rid, cx, cy, id, name) {
 function marksXml(text, refs, size, baseBold, mono, refsByKey) {
   if (!text) return "";
   const out = [];
+  // 先切 HTML 上下标：<sup>…</sup> / <sub>…</sub>（思源正文常用 HTML 标签写单位上标）
+  const vertRe = /<(sup|sub)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/g;
+  let last = 0, m;
+  while ((m = vertRe.exec(text)) !== null) {
+    if (m.index > last) out.push(boldMarks(text.slice(last, m.index), refs, size, baseBold, mono, refsByKey));
+    const vert = m[1] === "sup" ? "superscript" : "subscript";
+    out.push(vertXml(m[2], vert, size, baseBold, mono));
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(boldMarks(text.slice(last), refs, size, baseBold, mono, refsByKey));
+  return out.join("");
+}
+
+// 上下标 run：内容仍走加粗/斜体/代码/公式链，vertAlign 注入到每个 run 的 rPr
+function vertXml(text, vert, size, bold, mono) {
+  const inner = codeItalic(text, size, bold, mono);
+  return inner.replace(/(<w:rFonts[^\/]*\/>)/g, `$1<w:vertAlign w:val="${vert}"/>`);
+}
+
+function boldMarks(text, refs, size, baseBold, mono, refsByKey) {
+  if (!text) return "";
+  const out = [];
   const re = /\*\*([^*]+)\*\*/g;
   let last = 0, m;
   while ((m = re.exec(text)) !== null) {

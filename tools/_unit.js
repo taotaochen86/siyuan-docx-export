@@ -1,4 +1,4 @@
-const D = require("./src/docx.js");
+const D = require("../src/docx.js");
 const s = "行内 $A_1$ 与 $\\frac{a}{b}$ 结束。";
 console.log("输入: " + s);
 const out = D.buildInline(s, {}, 12, false, false, {}, null);
