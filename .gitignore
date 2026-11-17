@@ -4,6 +4,7 @@ dist/
 
 # 测试产物与临时数据
 *.docx
+*.zip
 _*.json
 _cap.json
 *_tbl*.json
