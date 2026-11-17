@@ -12,10 +12,12 @@ function esc(s) {
 }
 
 // 排版间距：删除汉字与英文/数字之间的半角/全角空格；
-// 数字↔字母（单位，如 10 cm、m 3）、英文内部、汉字之间的空格保留。
+// 数字↔字母（单位，如 10 cm、m 3）、英文内部、汉字之间的空格保留；
+// 题注标签「表/图/式」与编号之间的空格保留（表 4-1）。
 function cnSpacing(s) {
   return String(s == null ? "" : s)
-    .replace(/([\u4e00-\u9fa5])[ 　]+([A-Za-z0-9])/g, "$1$2")
+    .replace(/([\u4e00-\u9fa5])[ 　]+([A-Za-z0-9])/g, (m, cn, an) =>
+      /[表图式]/.test(cn) ? m : cn + an)
     .replace(/([A-Za-z0-9])[ 　]+([\u4e00-\u9fa5])/g, "$1$2");
 }
 
@@ -74,7 +76,7 @@ function fieldRuns(instr, cached, opts) {
   x += `<w:r><w:fldChar w:fldCharType="begin"/></w:r>`;
   x += `<w:r><w:instrText xml:space="preserve"> ${esc(instr)} </w:instrText></w:r>`;
   x += `<w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
-  x += `<w:r>${rPr({ size: o.size || 12, bold: o.bold, italic: o.italic, cn: o.cn }) }<w:t xml:space="preserve">${esc(cached || "")}</w:t></w:r>`;
+  x += `<w:r>${rPr({ size: o.size || 12, bold: o.bold, italic: o.italic, cn: o.cn }) }<w:t xml:space="preserve">${esc(cnSpacing(cached || ""))}</w:t></w:r>`;
   x += `<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
   return x;
 }

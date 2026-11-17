@@ -2657,7 +2657,7 @@
         return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }
       function cnSpacing(s) {
-        return String(s == null ? "" : s).replace(/([\u4e00-\u9fa5])[ 　]+([A-Za-z0-9])/g, "$1$2").replace(/([A-Za-z0-9])[ 　]+([\u4e00-\u9fa5])/g, "$1$2");
+        return String(s == null ? "" : s).replace(/([\u4e00-\u9fa5])[ 　]+([A-Za-z0-9])/g, (m, cn, an) => /[表图式]/.test(cn) ? m : cn + an).replace(/([A-Za-z0-9])[ 　]+([\u4e00-\u9fa5])/g, "$1$2");
       }
       function rPr(opts) {
         const o = opts || {};
@@ -2703,7 +2703,7 @@
         x += `<w:r><w:fldChar w:fldCharType="begin"/></w:r>`;
         x += `<w:r><w:instrText xml:space="preserve"> ${esc(instr)} </w:instrText></w:r>`;
         x += `<w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
-        x += `<w:r>${rPr({ size: o.size || 12, bold: o.bold, italic: o.italic, cn: o.cn })}<w:t xml:space="preserve">${esc(cached || "")}</w:t></w:r>`;
+        x += `<w:r>${rPr({ size: o.size || 12, bold: o.bold, italic: o.italic, cn: o.cn })}<w:t xml:space="preserve">${esc(cnSpacing(cached || ""))}</w:t></w:r>`;
         x += `<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
         return x;
       }

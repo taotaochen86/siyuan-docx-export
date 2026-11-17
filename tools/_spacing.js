@@ -28,6 +28,10 @@ check("kg 前空格保留", v2.includes("10 kg"), v2);
 const v3 = visible(D.buildInline("结 3 个 `x  y`", {}, 12, false, true, {}, null));
 check("mono 内空格保留", v3.includes("x  y"), v3);
 
+// 3b. 题注标签「表/图/式」与编号空格保留
+const v4 = visible(D.buildInline("见表 4-1 和图 2 所示", {}, 12, false, false, {}, null));
+check("题注标签空格保留", v4.includes("表 4-1") && v4.includes("图 2"), v4);
+
 // 4. 编号分隔：numbering 每层 suff=space（不跳默认制表位）
 const builderSrc = fs.readFileSync(path.join(__dirname, "../src/builder.js"), "utf8");
 const suffCount = (builderSrc.match(/<w:suff w:val="space"\/>/g) || []).length;
