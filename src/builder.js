@@ -30,7 +30,6 @@ function renderHeading(text, level, noNum) {
       style: "Heading" + lv,
       jc: "left",
       spacing: { before: lv <= 2 ? 200 : 120, after: 120, line: 240, lineRule: "auto" },
-      ind: { left: 0, firstLine: 0 },
     },
     D.runXml(clean, { cn: D.CN_HEI, en: D.CN_HEI, size, bold: true, color: "000000" })
   );
@@ -315,21 +314,21 @@ function stylesXml() {
 
 // 多级列表：L1 第N章 / L2 一、/ L3 （一）/ L4 1. / L5 (1）
 function numberingXml() {
-  const lvl = (ilvl, fmt, text, sz) => `
+  const lvl = (ilvl, fmt, text, sz, left) => `
     <w:lvl w:ilvl="${ilvl}">
       <w:start w:val="1"/><w:numFmt w:val="${fmt}"/><w:suff w:val="space"/><w:lvlText w:val="${text}"/><w:lvlJc w:val="left"/>
-      <w:pPr><w:ind w:left="0" w:firstLine="0"/></w:pPr>
+      <w:pPr><w:tabs><w:tab w:val="left" w:pos="${left}"/></w:tabs><w:ind w:left="${left}" w:hanging="${left}"/></w:pPr>
       <w:rPr><w:rFonts w:ascii="${D.CN_HEI}" w:hAnsi="${D.CN_HEI}" w:eastAsia="${D.CN_HEI}"/><w:b/><w:sz w:val="${sz * 2}"/></w:rPr>
     </w:lvl>`;
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:abstractNum w:abstractNumId="0">
     <w:multiLevelType w:val="multilevel"/>
-    ${lvl(0, "decimal", "第%1章", 16)}
-    ${lvl(1, "chineseCounting", "%2、", 14)}
-    ${lvl(2, "chineseCounting", "（%3）", 13)}
-    ${lvl(3, "decimal", "%4.", 12)}
-    ${lvl(4, "decimal", "(%5）", 12)}
+    ${lvl(0, "decimal", "第%1章", 16, 720)}
+    ${lvl(1, "chineseCounting", "%2、", 14, 480)}
+    ${lvl(2, "chineseCounting", "（%3）", 13, 660)}
+    ${lvl(3, "decimal", "%4.", 12, 360)}
+    ${lvl(4, "decimal", "(%5）", 12, 480)}
   </w:abstractNum>
   <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
 </w:numbering>`;
