@@ -72,12 +72,16 @@ function pPr(opts) {
 // ---------------- 域 / 书签 ----------------
 function fieldRuns(instr, cached, opts) {
   const o = opts || {};
+  // hidden：整段域标「隐藏文字」，用于章标题里做「章号计数器」，不占版面、不进目录
+  const hidRun = o.hidden ? "<w:rPr><w:vanish/></w:rPr>" : "";
+  const baseRPr = rPr({ size: o.size || 12, bold: o.bold, italic: o.italic, cn: o.cn });
+  const resRPr = o.hidden ? baseRPr.replace("<w:rPr>", "<w:rPr><w:vanish/>") : baseRPr;
   let x = "";
-  x += `<w:r><w:fldChar w:fldCharType="begin"/></w:r>`;
-  x += `<w:r><w:instrText xml:space="preserve"> ${esc(instr)} </w:instrText></w:r>`;
-  x += `<w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
-  x += `<w:r>${rPr({ size: o.size || 12, bold: o.bold, italic: o.italic, cn: o.cn }) }<w:t xml:space="preserve">${esc(cnSpacing(cached || ""))}</w:t></w:r>`;
-  x += `<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+  x += `<w:r>${hidRun}<w:fldChar w:fldCharType="begin"/></w:r>`;
+  x += `<w:r>${hidRun}<w:instrText xml:space="preserve"> ${esc(instr)} </w:instrText></w:r>`;
+  x += `<w:r>${hidRun}<w:fldChar w:fldCharType="separate"/></w:r>`;
+  x += `<w:r>${resRPr}<w:t xml:space="preserve">${esc(cnSpacing(cached || ""))}</w:t></w:r>`;
+  x += `<w:r>${hidRun}<w:fldChar w:fldCharType="end"/></w:r>`;
   return x;
 }
 

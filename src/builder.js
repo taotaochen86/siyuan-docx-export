@@ -16,10 +16,23 @@ function pageBreakPara() {
 }
 
 // ---------------- 标题 ----------------
-// level 1 -> Heading1（带「第N章」自动编号 + 书签级 outlineLvl 0）
-// level 2..5 -> Heading2..5（一、/（一）/1./(1）自动编号）
-// noNum: 该标题在章节结构里是"悬空"的（出现在全书第一个一级标题之前，如书名页后的「序言」），
-//        用 numId=0 去掉编号。否则 Word 会把它隐式计入上级编号，导致其后所有章号 +1。
+// 从「第N章」解析真实章号（阿拉伯或中文数字）；解析不到返回 null
+const CN_DIGIT = { 零: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+function cnNum(s) {
+  if (/^[0-9]+$/.test(s)) return parseInt(s, 10);
+  if (s.length === 1 && CN_DIGIT[s] != null) return CN_DIGIT[s];
+  const m = /^([一二三四五六七八九])?十([一二三四五六七八九])?$/.exec(s);
+  if (m) return (m[1] ? CN_DIGIT[m[1]] : 1) * 10 + (m[2] ? CN_DIGIT[m[2]] : 0);
+  return null;
+}
+function parseChapterNo(text) {
+  const m = /第\s*([0-9]+|[一二三四五六七八九十]+)\s*章/.exec(text);
+  return m ? cnNum(m[1]) : null;
+}
+
+// level 1 -> Heading1（标题编号是思源静态文本，只套样式）
+// 章标题段末追加一个隐藏的 `SEQ 章 \r N` 计数器：题注用 `SEQ 章 \c` 取章号，
+// 这样「表 4-1」是整段域、F9 后章号仍是 4（每章显式重置，不会因为缺章被重排）。
 function renderHeading(text, level, strip) {
   const lv = Math.min(Math.max(level, 1), 5);
   const size = HEADING_SIZES[lv] || 12;
@@ -27,13 +40,19 @@ function renderHeading(text, level, strip) {
   if (strip) clean = M.stripHeadingNum(clean);
   if (!clean) return "";
   // 标题编号保留思源原文（静态文本），只套 Heading 样式，不绑 Word 列表。
+  let inner = D.runXml(clean, { cn: D.CN_HEI, en: D.CN_HEI, size, bold: true, color: "000000" });
+  if (lv === 1) {
+    const ch = parseChapterNo(clean);
+    // 缓存文本留空：更新前后都不产生可见字符，标题里不会多出数字
+    inner += D.fieldRuns(ch != null ? `SEQ 章 \\* ARABIC \\r ${ch}` : "SEQ 章 \\* ARABIC", "", { size, hidden: true });
+  }
   return para(
     {
       style: "Heading" + lv,
       jc: "left",
       spacing: { before: lv <= 2 ? 200 : 120, after: 120, line: 240, lineRule: "auto" },
     },
-    D.runXml(clean, { cn: D.CN_HEI, en: D.CN_HEI, size, bold: true, color: "000000" })
+    inner
   );
 }
 
@@ -103,9 +122,8 @@ function renderMath(code, num, anchor, bmId, ctx) {
   const { chap, seq } = splitChapSeq(num);
   inner += D.runXml("(", { size: 12 });
   if (chap) {
-    // 章号写静态文本：标题编号是思源写死的原文、没有 Word 自动编号，
-    // STYLEREF 的 \s/\n 取的是「段落编号」，无编号时必然失败（WPS 报「未定义样式」）。
-    inner += D.runXml(chap, { size: 12 });
+    // 同题注：章号取章标题里隐藏的 `SEQ 章 \r N`，整段编号都是域
+    inner += D.fieldRuns(`SEQ 章 \\c`, chap, { size: 12 });
     inner += D.runXml("-", { size: 12 });
   }
   inner += D.fieldRuns(`SEQ \u5f0f \\* ARABIC \\s 1`, seq, { size: 12 });
@@ -178,9 +196,9 @@ function renderCaption(kind, num, title, anchor, bmId, ctx) {
   inner += start;
   inner += D.runXml(kind + " ", { size: 12, bold: true });
   if (chap) {
-    // 章号静态：标题编号是思源写死原文，无 Word 自动编号，
-    // STYLEREF \s/\n 取"段落编号"必然失败，故章号直接写原文数字。
-    inner += D.runXml(chap, { size: 12, bold: true });
+    // 章号是域：取本章标题里隐藏的 `SEQ 章 \r N`（`\c` = 重复最近序号）。
+    // 「表 4-1」整段都是域结果，F9 后章号仍精确等于思源原章号。
+    inner += D.fieldRuns(`SEQ 章 \\c`, chap, { size: 12, bold: true });
     inner += D.runXml("-", { size: 12, bold: true });
   }
   inner += D.fieldRuns(`SEQ ${kind} \\* ARABIC \\s 1`, seq, { size: 12, bold: true });

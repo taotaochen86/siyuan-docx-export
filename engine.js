@@ -2699,12 +2699,15 @@
       }
       function fieldRuns(instr, cached, opts) {
         const o = opts || {};
+        const hidRun = o.hidden ? "<w:rPr><w:vanish/></w:rPr>" : "";
+        const baseRPr = rPr({ size: o.size || 12, bold: o.bold, italic: o.italic, cn: o.cn });
+        const resRPr = o.hidden ? baseRPr.replace("<w:rPr>", "<w:rPr><w:vanish/>") : baseRPr;
         let x = "";
-        x += `<w:r><w:fldChar w:fldCharType="begin"/></w:r>`;
-        x += `<w:r><w:instrText xml:space="preserve"> ${esc(instr)} </w:instrText></w:r>`;
-        x += `<w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
-        x += `<w:r>${rPr({ size: o.size || 12, bold: o.bold, italic: o.italic, cn: o.cn })}<w:t xml:space="preserve">${esc(cnSpacing(cached || ""))}</w:t></w:r>`;
-        x += `<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+        x += `<w:r>${hidRun}<w:fldChar w:fldCharType="begin"/></w:r>`;
+        x += `<w:r>${hidRun}<w:instrText xml:space="preserve"> ${esc(instr)} </w:instrText></w:r>`;
+        x += `<w:r>${hidRun}<w:fldChar w:fldCharType="separate"/></w:r>`;
+        x += `<w:r>${resRPr}<w:t xml:space="preserve">${esc(cnSpacing(cached || ""))}</w:t></w:r>`;
+        x += `<w:r>${hidRun}<w:fldChar w:fldCharType="end"/></w:r>`;
         return x;
       }
       function bookmarkStart(id, name) {
@@ -3432,19 +3435,36 @@
       function pageBreakPara() {
         return `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
       }
+      var CN_DIGIT = { \u96F6: 0, \u4E00: 1, \u4E8C: 2, \u4E09: 3, \u56DB: 4, \u4E94: 5, \u516D: 6, \u4E03: 7, \u516B: 8, \u4E5D: 9 };
+      function cnNum(s) {
+        if (/^[0-9]+$/.test(s)) return parseInt(s, 10);
+        if (s.length === 1 && CN_DIGIT[s] != null) return CN_DIGIT[s];
+        const m = /^([一二三四五六七八九])?十([一二三四五六七八九])?$/.exec(s);
+        if (m) return (m[1] ? CN_DIGIT[m[1]] : 1) * 10 + (m[2] ? CN_DIGIT[m[2]] : 0);
+        return null;
+      }
+      function parseChapterNo(text) {
+        const m = /第\s*([0-9]+|[一二三四五六七八九十]+)\s*章/.exec(text);
+        return m ? cnNum(m[1]) : null;
+      }
       function renderHeading(text, level, strip) {
         const lv = Math.min(Math.max(level, 1), 5);
         const size = HEADING_SIZES[lv] || 12;
         let clean = M.stripHtml(text).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
         if (strip) clean = M.stripHeadingNum(clean);
         if (!clean) return "";
+        let inner = D.runXml(clean, { cn: D.CN_HEI, en: D.CN_HEI, size, bold: true, color: "000000" });
+        if (lv === 1) {
+          const ch = parseChapterNo(clean);
+          inner += D.fieldRuns(ch != null ? `SEQ \u7AE0 \\* ARABIC \\r ${ch}` : "SEQ \u7AE0 \\* ARABIC", "", { size, hidden: true });
+        }
         return para(
           {
             style: "Heading" + lv,
             jc: "left",
             spacing: { before: lv <= 2 ? 200 : 120, after: 120, line: 240, lineRule: "auto" }
           },
-          D.runXml(clean, { cn: D.CN_HEI, en: D.CN_HEI, size, bold: true, color: "000000" })
+          inner
         );
       }
       function renderDocHeading(text, strip) {
@@ -3503,7 +3523,7 @@
         const { chap, seq } = splitChapSeq(num);
         inner += D.runXml("(", { size: 12 });
         if (chap) {
-          inner += D.runXml(chap, { size: 12 });
+          inner += D.fieldRuns(`SEQ \u7AE0 \\c`, chap, { size: 12 });
           inner += D.runXml("-", { size: 12 });
         }
         inner += D.fieldRuns(`SEQ \u5F0F \\* ARABIC \\s 1`, seq, { size: 12 });
@@ -3567,7 +3587,7 @@
         inner += start;
         inner += D.runXml(kind + " ", { size: 12, bold: true });
         if (chap) {
-          inner += D.runXml(chap, { size: 12, bold: true });
+          inner += D.fieldRuns(`SEQ \u7AE0 \\c`, chap, { size: 12, bold: true });
           inner += D.runXml("-", { size: 12, bold: true });
         }
         inner += D.fieldRuns(`SEQ ${kind} \\* ARABIC \\s 1`, seq, { size: 12, bold: true });

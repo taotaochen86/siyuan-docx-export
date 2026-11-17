@@ -8,8 +8,11 @@ const ROOT = process.argv[2];
 const DOCX = process.argv[3];
 
 function textOf(xml) {
-  // 去标签取可见文本，w:t 之间不补空格（避免误判）
-  return xml.replace(/<w:tab\/>/g, "\t").replace(/<[^>]+>/g, "");
+  // 去标签取可见文本；域指令（instrText）不是可见文本，必须先剔除
+  return xml
+    .replace(/<w:instrText[\s\S]*?<\/w:instrText>/g, "")
+    .replace(/<w:tab\/>/g, "\t")
+    .replace(/<[^>]+>/g, "");
 }
 
 (async () => {
