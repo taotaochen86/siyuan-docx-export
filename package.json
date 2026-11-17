@@ -1,0 +1,17 @@
+{
+  "name": "siyuan-docx-export",
+  "version": "0.3.0",
+  "description": "SiYuan plugin: export document tree to a standardized .docx, fully in the browser",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "audit": "node tools/_audit.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "fflate": "^0.8.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

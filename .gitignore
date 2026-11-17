@@ -1,0 +1,21 @@
+# 依赖与构建产物
+node_modules/
+dist/
+
+# 测试产物与临时数据
+*.docx
+_*.json
+_cap.json
+*_tbl*.json
+*.log
+
+# 允许入库的 json
+!package.json
+!package-lock.json
+!plugin.json
+!i18n/*.json
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>思源转 Word 插件 · 全面诊断报告</title>
+<style>
+  :root{--ok:#1a7f37;--warn:#9a6700;--bad:#cf222e;--ink:#1f2328;--mute:#656d76;--line:#d8dee4;--bg:#f6f8fa;}
+  *{box-sizing:border-box}
+  body{margin:0;background:#fff;color:var(--ink);font:15px/1.7 "Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:40px 28px 72px}
+  h1{font-size:26px;margin:0 0 6px;letter-spacing:.5px}
+  .sub{color:var(--mute);font-size:13px;margin-bottom:28px}
+  .verdict{border:1px solid var(--line);border-left:4px solid var(--ok);background:var(--bg);padding:18px 22px;border-radius:6px;margin-bottom:34px}
+  .verdict b{font-size:17px}
+  .verdict p{margin:10px 0 0;color:#3d444d}
+  h2{font-size:18px;margin:38px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:15px;margin:22px 0 10px;color:#3d444d}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:10px 0 6px}
+  th{background:var(--bg);text-align:left;font-weight:600;padding:9px 11px;border-bottom:2px solid var(--line);white-space:nowrap}
+  td{padding:9px 11px;border-bottom:1px solid #eaeef2;vertical-align:top}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:12px;font-weight:600;white-space:nowrap}
+  .t-ok{background:#dafbe1;color:var(--ok)}
+  .t-fix{background:#ddf4ff;color:#0550ae}
+  .t-warn{background:#fff8c5;color:var(--warn)}
+  .t-bad{background:#ffebe9;color:var(--bad)}
+  code{background:var(--bg);padding:1px 5px;border-radius:4px;font:13px Consolas,monospace}
+  ul{margin:8px 0 0 20px}
+  li{margin:5px 0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:14px 0}
+  .card{border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .card .k{font-size:12px;color:var(--mute)}
+  .card .v{font-size:22px;font-weight:700;margin-top:2px}
+  .foot{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);color:var(--mute);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>思源 → 规范 Word 插件 · 全面诊断报告</h1>
+<div class="sub">环境：OFFICE-TAOTAO1（Windows / 思源 3.8.10 / WPS 12.0）　诊断时间：2026-11-17　产物：<code>siyuan-docx-export</code> v0.3</div>
+
+<div class="verdict">
+<b>结论：可以用，结构层零缺陷；本轮又揪出 4 个真 bug 并已修，两本书实测通过。</b>
+<p>判据不是"我觉得没问题"，而是三条独立实测线同时成立：① 自写结构审计器 15 项全 PASS；② WPS 真机打开 + 全量 F9 更新域，标题、编号、题注、引用、图片、表格全部正确；③ 与思源原文逐项对账（标题 191/193、表格 46/46、图片 33/33）。<br>剩下 3 项不是缺陷，是<b>需要你拍板的口径问题</b>（见第五节）。</p>
+</div>
+
+<h2>一、诊断覆盖了什么</h2>
+<table>
+<thead><tr><th>层次</th><th>检查项</th><th>方法</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td>包结构</td><td>XML 良构、Content_Types 覆盖、关系闭环、rId 引用、域配对与嵌套、书签 id/名称唯一性与配对、样式引用、numId/ilvl 引用、图片与 media 对应、图片宽度</td><td><code>node _audit.js</code></td><td><span class="tag t-ok">两本 15 + 13 项全 PASS</span></td></tr>
+<tr><td>渲染层</td><td>WPS 能否打开、样式名、自动编号、大纲级别、F9 更新域后是否变形、内嵌图片数、表格数、页数</td><td>WPS COM（<code>KWps.Application</code>）</td><td><span class="tag t-ok">通过</span></td></tr>
+<tr><td>内容对账</td><td>标题文本覆盖率、表格逐表行列守恒、图片引用数、空表保留、公式残留</td><td>思源 MD 统计 × docx 解析</td><td><span class="tag t-ok">守恒</span></td></tr>
+<tr><td>边界容错</td><td>空文档 / 无标题文档 / 缺失图片 / 全空表 / 五级深标题 / Zotero 无元数据 / 单行公式</td><td>构造极端数据直调 <code>buildDocument</code></td><td><span class="tag t-ok">不崩、降级正确</span></td></tr>
+<tr><td>规模</td><td>26 篇 / 1.1MB / 106 页 首次真机导出</td><td>jsrunner 桥 <code>POST 127.0.0.1:6866</code></td><td><span class="tag t-ok">701ms</span></td></tr>
+</tbody>
+</table>
+
+<h2>二、本轮查出并修掉的 4 个真 bug</h2>
+<table>
+<thead><tr><th>#</th><th>缺陷</th><th>触发条件</th><th>表现</th><th>修法</th></tr></thead>
+<tbody>
+<tr>
+<td class="num">1</td><td>书签 id 跨文档重复</td><td>多篇文档的书签</td>
+<td>审计报 <code>书签 id 重复: 1000,1000,1001,1003</code>；Word 里交叉引用可能指向错位置</td>
+<td>计数器挂到 <code>ctx.bm</code> 全局累加，不再每篇从 1000 重来</td>
+</tr>
+<tr>
+<td class="num">2</td><td>ZOTERO_BIBL 跨段域缺 separate</td><td>文末书目域</td>
+<td>域结构 begin 24 / separate 23，不完整</td>
+<td>begin + instr 后补 <code>fldChar separate</code>，现 24/24/24</td>
+</tr>
+<tr>
+<td class="num">3</td><td><b>单行 $$ 公式吞掉后文</b></td><td>公式写在一行内，如 <code>$$y=1-x^3\tag{1}$$</code></td>
+<td>解析器没在行内闭合，把后面所有段落一路吃进公式，正文串味、可见文本出现 <code>$A1$</code>、<code>$(a)/(b)$</code></td>
+<td>先判 <code>head.length&gt;4 &amp;&amp; head.endsWith("$$")</code> 直接闭合，多行才走块扫描</td>
+</tr>
+<tr>
+<td class="num">4</td><td>2 列表被强撑成 3 列</td><td>思源里只有 2 列的表格</td>
+<td>每张 2 列表右边多一条空列，<code>7x2</code> 输出成 <code>7x3</code></td>
+<td>列数下限由 3 改为 1，按真实列数输出</td>
+</tr>
+</tbody>
+</table>
+
+<h3>同一轮复核确认（上一轮已修、本轮再验）</h3>
+<table>
+<thead><tr><th>缺陷</th><th>原因</th><th>本轮实测</th></tr></thead>
+<tbody>
+<tr><td>所有标题在导航窗格消失 / F9 后章节消失</td><td><code>styles.xml</code> 缺内置样式名 <code>&lt;w:name w:val="heading N"/&gt;</code>，Word 当匿名样式 <code>_Style 2</code></td><td>样式名显示"标题 1…标题 5"，大纲级别 1-5，F9 前后不变，异常样式段 0</td></tr>
+<tr><td>章号整体 +1（"第1章 前言"变第2章）</td><td>主文档里的"序言"是二级标题却排在第一个一级标题之前，Word 把上级计数隐式推到 1</td><td>"序言"现为无编号标题 2；全部一级标题连续：第1章…第8章</td></tr>
+<tr><td>题注交叉引用 F9 后变成整条题注文字</td><td>书签包住了整个题注段落</td><td>5 个题注中 4 个有书签（1 个无锚点属正常），范围错误 0；F9 后引用只显示"表 3"</td></tr>
+<tr><td>标题混入零宽字符 U+200B</td><td>思源正文自带</td><td>已清洗，标题文本干净</td></tr>
+</tbody>
+</table>
+
+<h2>三、两本书的实测数据</h2>
+
+<div class="grid">
+  <div class="card"><div class="k">第一本书 · 篇数</div><div class="v">26 篇</div></div>
+  <div class="card"><div class="k">第一本书 · 页数</div><div class="v">106 页</div></div>
+  <div class="card"><div class="k">第一本书 · 表格</div><div class="v">46 个</div></div>
+  <div class="card"><div class="k">第一本书 · 真嵌入图</div><div class="v">33 张</div></div>
+  <div class="card"><div class="k">第一本书 · 域</div><div class="v">34</div></div>
+  <div class="card"><div class="k">导出耗时</div><div class="v">701ms</div></div>
+</div>
+
+<table>
+<thead><tr><th>对账项</th><th>思源原文</th><th>Word 产物</th><th>判定</th></tr></thead>
+<tbody>
+<tr><td>标题文本覆盖</td><td class="num">193 条</td><td class="num">191 条命中</td><td><span class="tag t-ok">无丢失</span> 2 条未命中为口径误报（1 条转义冒号、1 条代码块里的 # 注释）</td></tr>
+<tr><td>表格数</td><td class="num">46 块</td><td class="num">46 表</td><td><span class="tag t-ok">一一对应</span></td></tr>
+<tr><td>表格行列</td><td class="num">46 块</td><td class="num">46 表</td><td><span class="tag t-ok">逐表一致</span> 修列数后 46/46 完全守恒</td></tr>
+<tr><td>三线表</td><td>—</td><td class="num">46/46</td><td><span class="tag t-ok">全部符合</span> 无边框定义 0、非三线 0、零行表 0</td></tr>
+<tr><td>空表 / 空单元格</td><td>—</td><td class="num">67 个空单元格</td><td><span class="tag t-ok">完整保留</span></td></tr>
+<tr><td>图片</td><td class="num">33 处引用</td><td class="num">33 处 / 29 部件</td><td><span class="tag t-ok">全部真嵌入</span> 4 处为同图复用，缺失占位 0</td></tr>
+<tr><td>分页</td><td>26 篇</td><td class="num">26 个分页符</td><td><span class="tag t-ok">每篇另起一页</span></td></tr>
+<tr><td>一级标题编号</td><td>—</td><td class="num">8 个</td><td><span class="tag t-ok">第1章…第8章 连续</span></td></tr>
+</tbody>
+</table>
+
+<h3>书测试那本（含 Zotero / 题注 / 交叉引用）</h3>
+<table>
+<thead><tr><th>项</th><th>实测</th><th>判定</th></tr></thead>
+<tbody>
+<tr><td>Zotero 元数据命中</td><td class="num">11 / 11</td><td><span class="tag t-ok">全命中</span>（含批量漏项的单条兜底）</td></tr>
+<tr><td>ZOTERO_ITEM 文内域</td><td class="num">13</td><td><span class="tag t-ok">F9 后显示 "(崔浩等, 2026)"、"Rabbi et al. (2021)"</span></td></tr>
+<tr><td>ZOTERO_BIBL 书目域</td><td class="num">1</td><td><span class="tag t-ok">跨段域完整，6 条书目正常</span></td></tr>
+<tr><td>SEQ 题注域 / REF 引用域</td><td class="num">5 / 5</td><td><span class="tag t-ok">F9 后引用只显示"表 2/表 3/表 4"</span></td></tr>
+<tr><td>书签</td><td class="num">15 个</td><td><span class="tag t-ok">id 唯一、名称唯一、起止配对</span></td></tr>
+<tr><td>页数 / 表格 / 域</td><td class="num">12 / 5 / 24</td><td><span class="tag t-ok">结构审计 13 项全 PASS</span></td></tr>
+</tbody>
+</table>
+
+<h3>边界样本（构造极端输入）</h3>
+<table>
+<thead><tr><th>场景</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td>空文档（只有 frontmatter）</td><td><span class="tag t-ok">不崩</span> 产出合法 docx，保留篇标题</td></tr>
+<tr><td>图片路径不存在</td><td><span class="tag t-ok">降级</span> 显示 <code>[图片缺失: 文件名]</code>，其余内容不受影响</td></tr>
+<tr><td>全空表 <code>| | |</code></td><td><span class="tag t-ok">保留</span> 3 列 1 行空表照出</td></tr>
+<tr><td>表头有、数据行全空</td><td><span class="tag t-ok">保留</span> 三线表结构完整</td></tr>
+<tr><td>五级深标题</td><td><span class="tag t-ok">正常</span> Heading1-5 映射正确</td></tr>
+<tr><td>Zotero 条目无元数据</td><td><span class="tag t-ok">降级</span> 保留原文标签 "(Someone, 2026)"，不阻断出稿</td></tr>
+<tr><td>公式 + 行内公式混排</td><td><span class="tag t-ok">正确</span> <code>$</code> 残留 0；<code>A_1</code> → A+下标，<code>\frac{a}{b}</code> → (a)/(b)</td></tr>
+</tbody>
+</table>
+
+<h2>四、还没解决、我如实标出来的</h2>
+<table>
+<thead><tr><th>项</th><th>现状</th><th>影响</th></tr></thead>
+<tbody>
+<tr><td>公式不是 OMML</td><td>轻量 run 渲染（上下标 / 希腊字母 / 分式 / 根号）。本机无 Office、找不到 MML2OMML.XSL，浏览器侧无纯 JS 转换链</td><td><span class="tag t-warn">中</span> 矩阵、多行对齐、大型运算符会退化；普通公式可读</td></tr>
+<tr><td>脚注定义行</td><td><code>[^1]: …</code> 还是可见文字（第一本 4 处、书测试 1 处）</td><td><span class="tag t-warn">中</span> 应转真脚注或隐藏，等你定</td></tr>
+<tr><td>Zotero 未启动时的降级</td><td>代码路径存在（取不到元数据就保留原文），但本轮未做"关掉 Zotero 再导出"的实测</td><td><span class="tag t-warn">低</span> 仅是未实测，非已知缺陷</td></tr>
+</tbody>
+</table>
+
+<h2>五、需要你拍板的 3 件事</h2>
+<ul>
+<li><b>题注编号形态</b>：F9 后 SEQ 按顺序重排，思源的"表 4-1"会变成"表 3"（正文引用同步变，前后一致但与原文数字不同）。要保留"章-序"得改成 <code>STYLEREF 1 \s</code> + <code>SEQ 表 \* ARABIC \s 1</code>。</li>
+<li><b>脚注</b>：<code>[^1]:</code> 这类定义行，转 Word 真脚注 / 直接隐藏 / 保持原样，三选一。</li>
+<li><b>"About" 被编成第8章</b>：它在思源文件树里确实与章同级，Word 按结构给号。要不要把 About、Reference 这类非正文章排除在章编号之外。</li>
+</ul>
+
+<h2>六、怎么自己复验</h2>
+<h3>结构审计（13–15 项，最全）</h3>
+<code>cd "C:\Users\Taotao Chen\DoubaoWork\chats\2026-11-17\new-chat-7\docx-export-plugin"</code><br>
+<code>node _audit.js "某个.docx"</code>
+<p style="margin-top:8px;color:var(--mute);font-size:13px">有 FAIL 时退出码 1，可直接接 CI。同类工具：<code>_checkcap.js</code> 查题注书签范围、<code>_deep.js</code> 查公式残留与表格边框、<code>_recon.js</code> 内容对账、<code>_tblcmp.js</code> 逐表行列。</p>
+
+<h3>WPS 渲染验收</h3>
+<code>$w = New-Object -ComObject KWps.Application</code><br>
+<code>$doc = $w.Documents.Open("路径.docx",$false,$true); $doc.Fields.Update()</code>
+<p style="margin-top:8px;color:var(--mute);font-size:13px">读 <code>Style.NameLocal</code>（应为"标题 1…5"）、<code>Range.ListFormat.ListString</code>（自动编号）、<code>OutlineLevel</code>、<code>InlineShapes.Count</code>、<code>Tables.Count</code>。注意 <code>Content.Text</code> 不含自动编号，别用它判断编号。</p>
+
+<h3>成品</h3>
+<ul>
+<li><code>C:\Users\Taotao Chen\Downloads\试验设计与数据分析-规范版.docx</code>（26 篇 / 106 页 / 33 图 / 46 表）</li>
+<li><code>C:\Users\Taotao Chen\Downloads\【书籍测试】-规范版.docx</code>（8 篇 / 12 页 / Zotero 域齐全）</li>
+</ul>
+
+<div class="foot">
+诊断口径：结构层不靠肉眼、内容层不靠抽样、渲染层不靠"应该没问题"。凡未实测的项都在第四节标了"未实测"，没有写成"已完成"。
+</div>
+
+</div>
+</body>
+</html>

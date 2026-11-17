@@ -1,0 +1,17 @@
+{
+  "topBarTitle": "Export to Word",
+  "dialogTitle": "Export Word",
+  "scopeCurrent": "Current document only",
+  "scopeTree": "Current document and all sub-documents",
+  "coverTitle": "Cover title (empty = no cover)",
+  "coverAuthor": "Author",
+  "coverDate": "Date",
+  "exportBtn": "Export .docx",
+  "cancelBtn": "Cancel",
+  "tip": "Runs entirely in the browser, no local Python. Math falls back to italic text in this version.",
+  "noDoc": "Open a document in SiYuan first",
+  "pulling": "Fetching SiYuan content…",
+  "building": "Building Word…",
+  "done": "Exported: ",
+  "fail": "Export failed: "
+}

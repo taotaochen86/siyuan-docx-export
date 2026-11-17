@@ -1,0 +1,17 @@
+{
+  "topBarTitle": "导出为规范 Word",
+  "dialogTitle": "导出 Word",
+  "scopeCurrent": "仅当前文档",
+  "scopeTree": "当前文档及全部子文档（整册）",
+  "coverTitle": "封面书名（留空则不生成封面）",
+  "coverAuthor": "作者",
+  "coverDate": "日期",
+  "exportBtn": "导出 .docx",
+  "cancelBtn": "取消",
+  "tip": "导出过程在浏览器内完成，不依赖本地 Python；公式首版降级为斜体文本。",
+  "noDoc": "请先在思源里打开一篇文档",
+  "pulling": "正在拉取思源内容…",
+  "building": "正在生成 Word…",
+  "done": "已导出：",
+  "fail": "导出失败："
+}
