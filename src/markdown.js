@@ -63,12 +63,29 @@ function isSepRow(cells) {
   return nonempty.every((c) => /^:?-{2,}:?$/.test(c));
 }
 
-// ---------- 标题层级 ----------
-// 文档标题统一 Heading 1（章级带「第N章」自动编号，节级无编号）；
-// 正文 # / ## / ### / #### 分别落到 Heading 2/3/4/5，对应
-// tree-doc-numbering 的 bodyFormats：一、/（一）/1./(1）
+// 标题层级映射：文档标题 Heading1，正文 #..#### 落 Heading2..5
 function mapLevel(docLevel, hashN) {
   return Math.min(hashN + 1, 5);
+}
+
+// 剥掉 tree-doc-numbering 写死在标题文本里的静态编号前缀（可选开关）。
+// 覆盖：第N章/节/篇、（一）/(1）括号序号、一、中文顿号、1. / 3.1.4 阿拉伯点号。
+// 只剥开头第一段编号，题名原样保留；题注编号（表/图/式）不走这里。
+function stripHeadingNum(s) {
+  if (!s) return s;
+  let t = String(s).trim();
+  const patterns = [
+    /^第\s*[0-9一二三四五六七八九十百千]+\s*[章节篇]\s*/,
+    /^[（(]\s*[0-9一二三四五六七八九十百千]+\s*[)）]\s*/,
+    /^[一二三四五六七八九十百千]+\s*、\s*/,
+    /^[0-9]+(?:[.、-][0-9]+)+[.、]?\s*/,  // 多级 3.1.4 / 3.1.4.40.1
+    /^[0-9]+[.、]\s*/,                    // 单级 1. / 1、
+  ];
+  for (const re of patterns) {
+    const m = re.exec(t);
+    if (m) { t = t.slice(m[0].length); break; }
+  }
+  return t.trim();
 }
 
 // ---------- 公式 ----------
@@ -175,5 +192,5 @@ function parseDoc(meta, md, anchors, refId) {
 
 module.exports = {
   stripHtml, collectAnchors, parseDoc, parseReference, mapLevel,
-  splitMath, isCaption,
+  splitMath, isCaption, stripHeadingNum,
 };

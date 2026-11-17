@@ -37,7 +37,24 @@ const builderSrc = fs.readFileSync(path.join(__dirname, "../src/builder.js"), "u
 const mdSrc = fs.readFileSync(path.join(__dirname, "../src/markdown.js"), "utf8");
 check("标题路径无 numPr/numId 注入", !/<w:numPr/.test(builderSrc), "numPr 仍存在");
 check("numbering.xml 为空壳（无 abstractNum/lvl）", !/<w:abstractNum|<w:lvl /.test(builderSrc), "仍含列表定义");
-check("解析层标题不再剥编号", !/(?<!function )stripHeadingNum\(/.test(mdSrc), "仍调用 stripHeadingNum");
+check("解析层标题分支默认不剥编号", !/const text = stripHeadingNum/.test(mdSrc), "parseDoc 仍默认剥号");
+
+// 5. 可选剥号函数：覆盖各静态编号形态，无编号题名原样保留
+const M = require("../src/markdown.js");
+const stripCases = [
+  ["第1章 绪论", "绪论"],
+  ["第3章 材料与方法", "材料与方法"],
+  ["一、文档的标题变", "文档的标题变"],
+  ["（一）研究目的与意义", "研究目的与意义"],
+  ["1. 研究意义", "研究意义"],
+  ["(1）撒旦法撒旦法", "撒旦法撒旦法"],
+  ["3.1.4.40.1 多级编号标题", "多级编号标题"],
+  ["2026 年工作总结", "2026 年工作总结"],
+  ["绪论（无编号）", "绪论（无编号）"],
+];
+stripCases.forEach(([input, expect]) => {
+  check("剥号：" + input, M.stripHeadingNum(input) === expect, "=> " + M.stripHeadingNum(input));
+});
 
 console.log("\n可见文本: " + v);
 console.log("可见文本2: " + v2);

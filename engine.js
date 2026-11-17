@@ -2728,6 +2728,14 @@
         if (last < clean.length) out.push(linkPass(clean.slice(last), refs, size, baseBold, mono, refsByKey));
         return out.join("");
       }
+      var KIND_CODE = { "\u8868": "tbl", "\u56FE": "fig", "\u5F0F": "eq" };
+      function capKey(kind, num) {
+        return (KIND_CODE[kind] || "x") + "_" + String(num == null ? "" : num).replace(/-/g, "_");
+      }
+      function capBmName(kind, num) {
+        return "bkmk_cap_" + capKey(kind, num);
+      }
+      var CAP_LABEL_RE = /^(表|图|式)\s*([0-9]+(?:-[0-9]+)?)\s*$/;
       function linkPass(clean, refs, size, baseBold, mono, refsByKey) {
         if (!clean) return "";
         let out = [];
@@ -2745,7 +2753,13 @@
             if (seg.url.startsWith("zotero://")) {
               out.push(buildZoteroCite(seg.label, seg.url, refsByKey, size));
             } else if (seg.url.startsWith("#")) {
-              out.push(fieldRuns(`REF ${bkmkName(seg.url.slice(1))} \\h`, seg.label, { size }));
+              const cm = CAP_LABEL_RE.exec(seg.label.trim());
+              const caps = refs && refs.__caps;
+              if (cm && caps && caps.has(capKey(cm[1], cm[2]))) {
+                out.push(fieldRuns(`REF ${capBmName(cm[1], cm[2])} \\h`, seg.label, { size }));
+              } else {
+                out.push(marksXml(seg.label, refs, size, baseBold, mono, refsByKey));
+              }
             } else if (seg.url.startsWith("http")) {
               out.push(runXml(seg.label, { size, color: "0563C1" }));
             } else {
@@ -2822,7 +2836,8 @@
         let x = "";
         for (const f of parts) {
           if (f.startsWith("$") && f.endsWith("$") && f.length > 2) {
-            x += mathXml(f.slice(1, -1), { size, bold, mono });
+            const omml = mathOmml(f.slice(1, -1));
+            x += omml || mathXml(f.slice(1, -1), { size, bold, mono });
           } else if (f) {
             x += runXml(f, { size, bold, mono });
           }
@@ -2973,6 +2988,179 @@
         }
         return frags;
       }
+      function ommlRun(text, upright) {
+        const rpr = upright ? '<m:rPr><m:sty m:val="normal"/></m:rPr>' : "";
+        return `<m:r>${rpr}<m:t xml:space="preserve">${esc(text)}</m:t></m:r>`;
+      }
+      function readDelim(s, i, open, close) {
+        let depth = 1, j = i + 1, buf = "";
+        while (j < s.length && depth > 0) {
+          if (s[j] === close) {
+            depth -= 1;
+            if (depth === 0) {
+              j += 1;
+              break;
+            }
+          } else if (s[j] === open) {
+            depth += 1;
+          }
+          if (depth > 0) buf += s[j];
+          j += 1;
+        }
+        return { value: buf, next: j };
+      }
+      function readDelimChar(s, i) {
+        if (s[i] === "\\") return { chr: s[i + 1] || ".", next: i + 2 };
+        return { chr: s[i] || ".", next: i + 1 };
+      }
+      function delimNode(beg, end, inner) {
+        const pr = `<m:dPr><m:begChr m:val="${esc(beg)}"/><m:endChr m:val="${esc(end)}"/></m:dPr>`;
+        return `<m:d>${pr}<m:e>${inner}</m:e></m:d>`;
+      }
+      function ommlAtom(s, i, up) {
+        const ch = s[i];
+        if (ch === "(" || ch === "|") {
+          const close = ch === "(" ? ")" : "|";
+          const g = readDelim(s, i, ch, close);
+          return { node: delimNode(ch, close, ommlSeq(g.value, up)), next: g.next };
+        }
+        if (ch === "{") {
+          const g = readGroup(s, i);
+          return { node: ommlSeq(g.value, up), next: g.next };
+        }
+        if (ch === "\\") {
+          let k = i + 1;
+          while (k < s.length && /[A-Za-z]/.test(s[k])) k += 1;
+          const name = s.slice(i + 1, k);
+          if (name === "frac") {
+            const a = readGroup(s, k), b = readGroup(s, a.next);
+            return {
+              node: `<m:f><m:fPr><m:type m:val="bar"/></m:fPr><m:num>${ommlSeq(a.value, up)}</m:num><m:den>${ommlSeq(b.value, up)}</m:den></m:f>`,
+              next: b.next
+            };
+          }
+          if (name === "sqrt") {
+            const a = readGroup(s, k);
+            return {
+              node: `<m:rad><m:radPr><m:degHide m:val="1"/></m:radPr><m:deg/><m:e>${ommlSeq(a.value, up)}</m:e></m:rad>`,
+              next: a.next
+            };
+          }
+          if (name === "hat" || name === "bar" || name === "overline") {
+            const a = readGroup(s, k);
+            const chr = name === "hat" ? "^" : name === "bar" ? "\xAF" : "\u203E";
+            return {
+              node: `<m:acc><m:accPr><m:chr m:val="${chr}"/></m:accPr><m:e>${ommlSeq(a.value, up)}</m:e></m:acc>`,
+              next: a.next
+            };
+          }
+          if (name === "text" || name === "mathrm" || name === "mathbf" || name === "operatorname") {
+            const a = readGroup(s, k);
+            return { node: ommlSeq(a.value, true), next: a.next };
+          }
+          if (name === "begin") {
+            const envG = readGroup(s, k);
+            const env = envG.value;
+            const endTag = `\\end{${env}}`;
+            const ei = s.indexOf(endTag, envG.next);
+            const inner = ei < 0 ? s.slice(envG.next) : s.slice(envG.next, ei);
+            const rows = inner.split(/\\\\/);
+            const es = rows.map((r) => `<m:e>${ommlSeq(r, up)}</m:e>`).join("");
+            const next = ei < 0 ? s.length : ei + endTag.length;
+            return { node: `<m:eqArr>${es}</m:eqArr>`, next };
+          }
+          if (name === "end") {
+            const g = readGroup(s, k);
+            return { node: "", next: g.next };
+          }
+          if (name === "left") {
+            const bc = readDelimChar(s, k);
+            const ri = s.indexOf("\\right", bc.next);
+            let ec = { chr: ".", next: bc.next };
+            let innerEnd = ri;
+            if (ri >= 0) {
+              ec = readDelimChar(s, ri + 6);
+              innerEnd = ri;
+            }
+            const inner = ommlSeq(s.slice(bc.next, innerEnd), up);
+            return { node: delimNode(bc.chr, ec.chr, inner), next: ri >= 0 ? ec.next : innerEnd };
+          }
+          if (name === "right") {
+            const ec = readDelimChar(s, k);
+            return { node: "", next: ec.next };
+          }
+          if (GREEK[name]) return { node: ommlRun(GREEK[name], up), next: k };
+          if (SYMBOLS[name] !== void 0) return { node: ommlRun(SYMBOLS[name], up), next: k };
+          if (!name) {
+            const c = s[i + 1];
+            if (c === "{" || c === "}" || c === "|" || c === "(" || c === ")") {
+              return { node: ommlRun(c, up), next: i + 2 };
+            }
+            return { node: "", next: i + 1 };
+          }
+          return { node: "", next: k };
+        }
+        let j = i;
+        while (j < s.length && /[A-Za-z0-9]/.test(s[j])) j += 1;
+        if (j > i) return { node: ommlRun(s.slice(i, j), up), next: j };
+        return { node: ommlRun(ch, up), next: i + 1 };
+      }
+      function ommlSupSub(eNode, s, i, up) {
+        let sub = null, sup = null;
+        while (s[i] === "_" || s[i] === "^") {
+          const isSub = s[i] === "_";
+          i += 1;
+          while (s[i] === " " || s[i] === "~") i += 1;
+          const g = readGroup(s, i);
+          const content = ommlSeq(g.value, up);
+          i = g.next;
+          if (isSub) sub = content;
+          else sup = content;
+        }
+        if (sub && sup) {
+          return { node: `<m:sSubSup><m:e>${eNode}</m:e><m:sub>${sub}</m:sub><m:sup>${sup}</m:sup></m:sSubSup>`, next: i };
+        }
+        if (sub) {
+          return { node: `<m:sSub><m:sSubPr><m:ctrlPr/></m:sSubPr><m:e>${eNode}</m:e><m:sub>${sub}</m:sub></m:sSub>`, next: i };
+        }
+        if (sup) {
+          return { node: `<m:sSup><m:sSupPr><m:ctrlPr/></m:sSupPr><m:e>${eNode}</m:e><m:sup>${sup}</m:sup></m:sSup>`, next: i };
+        }
+        return { node: eNode, next: i };
+      }
+      function ommlSeq(src, up) {
+        const s = String(src == null ? "" : src).replace(/\\[,;:!]/g, " ");
+        let out = "", i = 0;
+        while (i < s.length) {
+          const ch = s[i];
+          if (ch === "{" || ch === "}") {
+            i += 1;
+            continue;
+          }
+          const atom = ommlAtom(s, i, up);
+          if (!atom.node) {
+            i = atom.next;
+            continue;
+          }
+          let j = atom.next;
+          while (s[j] === " " || s[j] === "~") j += 1;
+          if (s[j] === "_" || s[j] === "^") {
+            const ss = ommlSupSub(atom.node, s, j, up);
+            out += ss.node;
+            i = ss.next;
+            continue;
+          }
+          out += atom.node;
+          if (j > atom.next) out += ommlRun(s.slice(atom.next, j), up);
+          i = atom.next;
+        }
+        return out;
+      }
+      function mathOmml(latex) {
+        const body = ommlSeq(latex);
+        if (!body) return "";
+        return `<m:oMath xmlns:m="${M_NS}">${body}</m:oMath>`;
+      }
       function mathXml(latex, opts) {
         const o = opts || {};
         return latexFragments(latex).filter((f) => f.text).map((f) => runXml(f.text, { size: o.size || 12, bold: o.bold, mono: o.mono, vert: f.vert })).join("");
@@ -3013,7 +3201,10 @@
         bookmarkEnd,
         buildInline,
         bkmkName,
+        capKey,
+        capBmName,
         mathXml,
+        mathOmml,
         latexFragments,
         drawingXml,
         CN_SONG,
@@ -3084,6 +3275,27 @@
       }
       function mapLevel(docLevel, hashN) {
         return Math.min(hashN + 1, 5);
+      }
+      function stripHeadingNum(s) {
+        if (!s) return s;
+        let t = String(s).trim();
+        const patterns = [
+          /^第\s*[0-9一二三四五六七八九十百千]+\s*[章节篇]\s*/,
+          /^[（(]\s*[0-9一二三四五六七八九十百千]+\s*[)）]\s*/,
+          /^[一二三四五六七八九十百千]+\s*、\s*/,
+          /^[0-9]+(?:[.、-][0-9]+)+[.、]?\s*/,
+          // 多级 3.1.4 / 3.1.4.40.1
+          /^[0-9]+[.、]\s*/
+          // 单级 1. / 1、
+        ];
+        for (const re of patterns) {
+          const m = re.exec(t);
+          if (m) {
+            t = t.slice(m[0].length);
+            break;
+          }
+        }
+        return t.trim();
       }
       function splitMath(text) {
         let num = "";
@@ -3201,7 +3413,8 @@
         parseReference,
         mapLevel,
         splitMath,
-        isCaption
+        isCaption,
+        stripHeadingNum
       };
     }
   });
@@ -3219,10 +3432,11 @@
       function pageBreakPara() {
         return `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
       }
-      function renderHeading(text, level) {
+      function renderHeading(text, level, strip) {
         const lv = Math.min(Math.max(level, 1), 5);
         const size = HEADING_SIZES[lv] || 12;
-        const clean = M.stripHtml(text).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
+        let clean = M.stripHtml(text).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
+        if (strip) clean = M.stripHeadingNum(clean);
         if (!clean) return "";
         return para(
           {
@@ -3233,8 +3447,9 @@
           D.runXml(clean, { cn: D.CN_HEI, en: D.CN_HEI, size, bold: true, color: "000000" })
         );
       }
-      function renderDocHeading(text) {
-        const clean = M.stripHtml(text).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
+      function renderDocHeading(text, strip) {
+        let clean = M.stripHtml(text).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
+        if (strip) clean = M.stripHeadingNum(clean);
         if (!clean) return "";
         return para(
           { style: "HeadingDoc", jc: "left", spacing: { before: 240, after: 160, line: 240, lineRule: "auto" } },
@@ -3265,22 +3480,30 @@
           inner
         );
       }
-      function renderMath(code, num, anchor, bmId) {
+      function mathFragment(code) {
+        return D.mathOmml(code) || D.mathXml(code, { size: 12 });
+      }
+      function renderMath(code, num, anchor, bmId, ctx) {
         if (!num) {
           return para(
             { jc: "center", spacing: { before: 80, after: 80 } },
-            D.mathXml(code, { size: 12 })
+            mathFragment(code)
           );
         }
         const ppr = `<w:pPr><w:tabs><w:tab w:val="center" w:pos="${Math.round(CONTENT_W / 2)}"/><w:tab w:val="right" w:pos="${CONTENT_W}"/></w:tabs><w:spacing w:before="80" w:after="80"/></w:pPr>`;
-        const name = anchor ? D.bkmkName(anchor) : null;
-        let inner = `<w:r><w:tab/></w:r>` + D.mathXml(code, { size: 12 });
+        const key = D.capKey("\u5F0F", num);
+        let name = null;
+        if (!ctx || !ctx.bmNames || !ctx.bmNames.has(key)) {
+          if (ctx && ctx.bmNames) ctx.bmNames.add(key);
+          name = D.capBmName("\u5F0F", num);
+        }
+        let inner = `<w:r><w:tab/></w:r>` + mathFragment(code);
         inner += `<w:r><w:tab/></w:r>`;
         if (name) inner += D.bookmarkStart(bmId, name);
         const { chap, seq } = splitChapSeq(num);
         inner += D.runXml("(", { size: 12 });
         if (chap) {
-          inner += D.fieldRuns('STYLEREF "Heading 1" \\s', chap, { size: 12 });
+          inner += D.runXml(chap, { size: 12 });
           inner += D.runXml("-", { size: 12 });
         }
         inner += D.fieldRuns(`SEQ \u5F0F \\* ARABIC \\s 1`, seq, { size: 12 });
@@ -3331,19 +3554,20 @@
         const i = String(num).indexOf("-");
         return i > 0 ? { chap: num.slice(0, i), seq: num.slice(i + 1) } : { chap: "", seq: num };
       }
-      function renderCaption(kind, num, title, anchor, bmId) {
+      function renderCaption(kind, num, title, anchor, bmId, ctx) {
         let inner = "";
         let start = "", end = "";
-        if (anchor) {
-          const name = D.bkmkName(anchor);
-          start = D.bookmarkStart(bmId, name);
+        const key = D.capKey(kind, num);
+        if (!ctx || !ctx.bmNames || !ctx.bmNames.has(key)) {
+          if (ctx && ctx.bmNames) ctx.bmNames.add(key);
+          start = D.bookmarkStart(bmId, D.capBmName(kind, num));
           end = D.bookmarkEnd(bmId);
         }
         const { chap, seq } = splitChapSeq(num);
         inner += start;
         inner += D.runXml(kind + " ", { size: 12, bold: true });
         if (chap) {
-          inner += D.fieldRuns('STYLEREF "Heading 1" \\s', chap, { size: 12, bold: true });
+          inner += D.runXml(chap, { size: 12, bold: true });
           inner += D.runXml("-", { size: 12, bold: true });
         }
         inner += D.fieldRuns(`SEQ ${kind} \\* ARABIC \\s 1`, seq, { size: 12, bold: true });
@@ -3410,7 +3634,7 @@
           const b = blocks[n];
           switch (b.type) {
             case "heading": {
-              out += renderHeading(b.text, b.level);
+              out += renderHeading(b.text, b.level, ctx && ctx.stripHeadingNum);
               if (ctx && b.level === 1) ctx.seenH1 = true;
               break;
             }
@@ -3421,7 +3645,7 @@
               out += renderCode(b.code);
               break;
             case "math":
-              out += renderMath(b.code, b.num, b.anchor, bm);
+              out += renderMath(b.code, b.num, b.anchor, bm, ctx);
               bm += 1;
               break;
             case "image":
@@ -3431,7 +3655,7 @@
               out += renderTable(b.rows, refsByKey, ctx);
               break;
             case "caption":
-              out += renderCaption(b.kind, b.num, b.title, b.anchor, bm);
+              out += renderCaption(b.kind, b.num, b.title, b.anchor, bm, ctx);
               bm += 1;
               break;
             case "reference":
@@ -3479,10 +3703,21 @@
       }
       function buildDocument(raw, opts, refsByKey, assets) {
         const docs = raw.docs;
-        const ctx = { assets: assets || {}, media: [], bm: 1e3, seenH1: false };
+        const ctx = { assets: assets || {}, media: [], bm: 1e3, seenH1: false, stripHeadingNum: !!opts.stripHeadingNum };
         ctx.imgHook = (alt, url) => imageXml(url, alt, ctx, 10.5);
         const refId = opts.referenceDocId || (docs.find((d) => d.title.trim().toLowerCase() === "reference") || {}).id || "";
         const anchors = M.collectAnchors(docs);
+        ctx.capKeys = /* @__PURE__ */ new Set();
+        ctx.bmNames = /* @__PURE__ */ new Set();
+        const blocksByDoc = docs.map((d) => M.parseDoc(d, d.markdown, anchors, refId));
+        for (const bs of blocksByDoc) {
+          for (const b of bs) {
+            if (b.type === "caption") ctx.capKeys.add(D.capKey(b.kind, b.num));
+            else if (b.type === "math" && b.num) ctx.capKeys.add(D.capKey("\u5F0F", b.num));
+          }
+        }
+        const refsInline = Object.assign({}, refsByKey || {});
+        refsInline.__caps = ctx.capKeys;
         let body = "";
         if (opts.coverTitle) {
           body += para(
@@ -3494,18 +3729,18 @@
           if (opts.coverDate) body += para({ jc: "center" }, D.runXml("\u53D1\u5E03\u65E5\u671F\uFF1A" + opts.coverDate, { size: 14 }));
           body += pageBreakPara();
         }
-        const renderDoc = (doc) => renderBlocks(M.parseDoc(doc, doc.markdown, anchors, refId), refsByKey, ctx.bm, ctx);
-        body += renderDoc(docs[0]);
+        const renderDoc = (doc, blocks) => renderBlocks(blocks, refsInline, ctx.bm, ctx);
+        body += renderDoc(docs[0], blocksByDoc[0]);
         for (let i = 1; i < docs.length; i++) {
           const doc = docs[i];
           body += pageBreakPara();
           if (doc.level === 1 && doc.id !== refId) {
-            body += renderHeading(doc.title, 1);
+            body += renderHeading(doc.title, 1, ctx.stripHeadingNum);
             ctx.seenH1 = true;
           } else {
-            body += renderDocHeading(doc.title);
+            body += renderDocHeading(doc.title, ctx.stripHeadingNum);
           }
-          body += renderDoc(doc);
+          body += renderDoc(doc, blocksByDoc[i]);
         }
         const sect = `<w:sectPr>
     <w:pgSz w:w="11906" w:h="16838"/>
@@ -3516,7 +3751,8 @@
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
   xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
   xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
-  xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+  xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"
+  xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
   <w:body>${body}${sect}</w:body>
 </w:document>`;
         const exts = Array.from(new Set(ctx.media.map((m) => m.asset.ext)));

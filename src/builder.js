@@ -20,10 +20,11 @@ function pageBreakPara() {
 // level 2..5 -> Heading2..5（一、/（一）/1./(1）自动编号）
 // noNum: 该标题在章节结构里是"悬空"的（出现在全书第一个一级标题之前，如书名页后的「序言」），
 //        用 numId=0 去掉编号。否则 Word 会把它隐式计入上级编号，导致其后所有章号 +1。
-function renderHeading(text, level) {
+function renderHeading(text, level, strip) {
   const lv = Math.min(Math.max(level, 1), 5);
   const size = HEADING_SIZES[lv] || 12;
-  const clean = M.stripHtml(text).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
+  let clean = M.stripHtml(text).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
+  if (strip) clean = M.stripHeadingNum(clean);
   if (!clean) return "";
   // 标题编号保留思源原文（静态文本），只套 Heading 样式，不绑 Word 列表。
   return para(
@@ -37,8 +38,9 @@ function renderHeading(text, level) {
 }
 
 // 不参与自动编号的大标题（节级文档、Reference 等）
-function renderDocHeading(text) {
-  const clean = M.stripHtml(text).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
+function renderDocHeading(text, strip) {
+  let clean = M.stripHtml(text).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
+  if (strip) clean = M.stripHeadingNum(clean);
   if (!clean) return "";
   return para(
     { style: "HeadingDoc", jc: "left", spacing: { before: 240, after: 160, line: 240, lineRule: "auto" } },
@@ -73,25 +75,37 @@ function renderCode(code) {
   );
 }
 
+// 公式片段：优先 Word 原生 OMML；解析为空回退轻量文本 run
+function mathFragment(code) {
+  return D.mathOmml(code) || D.mathXml(code, { size: 12 });
+}
+
 // 独立公式：有编号走「居中 + 右对齐编号(SEQ 式 域 + 书签)」，无编号居中
-function renderMath(code, num, anchor, bmId) {
+function renderMath(code, num, anchor, bmId, ctx) {
   if (!num) {
     return para(
       { jc: "center", spacing: { before: 80, after: 80 } },
-      D.mathXml(code, { size: 12 })
+      mathFragment(code)
     );
   }
   const ppr = `<w:pPr><w:tabs><w:tab w:val="center" w:pos="${Math.round(CONTENT_W / 2)}"/>` +
     `<w:tab w:val="right" w:pos="${CONTENT_W}"/></w:tabs>` +
     `<w:spacing w:before="80" w:after="80"/></w:pPr>`;
-  const name = anchor ? D.bkmkName(anchor) : null;
-  let inner = `<w:r><w:tab/></w:r>` + D.mathXml(code, { size: 12 });
+  const key = D.capKey("式", num);
+  let name = null;
+  if (!ctx || !ctx.bmNames || !ctx.bmNames.has(key)) {
+    if (ctx && ctx.bmNames) ctx.bmNames.add(key);
+    name = D.capBmName("式", num);
+  }
+  let inner = `<w:r><w:tab/></w:r>` + mathFragment(code);
   inner += `<w:r><w:tab/></w:r>`;
   if (name) inner += D.bookmarkStart(bmId, name);
   const { chap, seq } = splitChapSeq(num);
   inner += D.runXml("(", { size: 12 });
   if (chap) {
-    inner += D.fieldRuns('STYLEREF "Heading 1" \\s', chap, { size: 12 });
+    // 章号写静态文本：标题编号是思源写死的原文、没有 Word 自动编号，
+    // STYLEREF 的 \s/\n 取的是「段落编号」，无编号时必然失败（WPS 报「未定义样式」）。
+    inner += D.runXml(chap, { size: 12 });
     inner += D.runXml("-", { size: 12 });
   }
   inner += D.fieldRuns(`SEQ \u5f0f \\* ARABIC \\s 1`, seq, { size: 12 });
@@ -147,12 +161,15 @@ function splitChapSeq(num) {
   return i > 0 ? { chap: num.slice(0, i), seq: num.slice(i + 1) } : { chap: "", seq: num };
 }
 
-function renderCaption(kind, num, title, anchor, bmId) {
+function renderCaption(kind, num, title, anchor, bmId, ctx) {
   let inner = "";
   let start = "", end = "";
-  if (anchor) {
-    const name = D.bkmkName(anchor);
-    start = D.bookmarkStart(bmId, name);
+  // 书签按「标签+编号」命名并全局去重：同一编号在多篇文档里只建一次，
+  // 交叉引用按同一编号命中，跨文档也不会撞名、不会「未定义书签」。
+  const key = D.capKey(kind, num);
+  if (!ctx || !ctx.bmNames || !ctx.bmNames.has(key)) {
+    if (ctx && ctx.bmNames) ctx.bmNames.add(key);
+    start = D.bookmarkStart(bmId, D.capBmName(kind, num));
     end = D.bookmarkEnd(bmId);
   }
   // 书签只覆盖「表/图/式 + 编号」，题名放到书签外。
@@ -161,8 +178,9 @@ function renderCaption(kind, num, title, anchor, bmId) {
   inner += start;
   inner += D.runXml(kind + " ", { size: 12, bold: true });
   if (chap) {
-    // 章号：STYLEREF 取最近 Heading 1 编号；序号：SEQ 按级别 1 每章重置
-    inner += D.fieldRuns('STYLEREF "Heading 1" \\s', chap, { size: 12, bold: true });
+    // 章号静态：标题编号是思源写死原文，无 Word 自动编号，
+    // STYLEREF \s/\n 取"段落编号"必然失败，故章号直接写原文数字。
+    inner += D.runXml(chap, { size: 12, bold: true });
     inner += D.runXml("-", { size: 12, bold: true });
   }
   inner += D.fieldRuns(`SEQ ${kind} \\* ARABIC \\s 1`, seq, { size: 12, bold: true });
@@ -249,16 +267,16 @@ function renderBlocks(blocks, refsByKey, bmId, ctx) {
     const b = blocks[n];
     switch (b.type) {
       case "heading": {
-        out += renderHeading(b.text, b.level);
+        out += renderHeading(b.text, b.level, ctx && ctx.stripHeadingNum);
         if (ctx && b.level === 1) ctx.seenH1 = true;
         break;
       }
       case "body": out += renderBody(b.text, refsByKey, b.listItem, ctx); break;
       case "code": out += renderCode(b.code); break;
-      case "math": out += renderMath(b.code, b.num, b.anchor, bm); bm += 1; break;
+      case "math": out += renderMath(b.code, b.num, b.anchor, bm, ctx); bm += 1; break;
       case "image": out += renderImage(b.rel, ctx); break;
       case "table": out += renderTable(b.rows, refsByKey, ctx); break;
-      case "caption": out += renderCaption(b.kind, b.num, b.title, b.anchor, bm); bm += 1; break;
+      case "caption": out += renderCaption(b.kind, b.num, b.title, b.anchor, bm, ctx); bm += 1; break;
       case "reference": out += renderReference(b.entries, refsByKey, bm); bm += b.entries.length; break;
       default: break;
     }
@@ -308,11 +326,25 @@ function numberingXml() {
 
 function buildDocument(raw, opts, refsByKey, assets) {
   const docs = raw.docs;
-  const ctx = { assets: assets || {}, media: [], bm: 1000, seenH1: false };
+  const ctx = { assets: assets || {}, media: [], bm: 1000, seenH1: false, stripHeadingNum: !!opts.stripHeadingNum };
   ctx.imgHook = (alt, url) => imageXml(url, alt, ctx, 10.5);
   const refId = opts.referenceDocId ||
     (docs.find((d) => d.title.trim().toLowerCase() === "reference") || {}).id || "";
   const anchors = M.collectAnchors(docs);
+
+  // 预扫描：先把所有题注/公式编号收齐，交叉引用才能判断「目标题注是否存在」，
+  // 不存在的引用降级为普通文本，避免 F9 后出现「错误！未定义书签。」
+  ctx.capKeys = new Set();
+  ctx.bmNames = new Set();
+  const blocksByDoc = docs.map((d) => M.parseDoc(d, d.markdown, anchors, refId));
+  for (const bs of blocksByDoc) {
+    for (const b of bs) {
+      if (b.type === "caption") ctx.capKeys.add(D.capKey(b.kind, b.num));
+      else if (b.type === "math" && b.num) ctx.capKeys.add(D.capKey("式", b.num));
+    }
+  }
+  const refsInline = Object.assign({}, refsByKey || {});
+  refsInline.__caps = ctx.capKeys;
 
   let body = "";
 
@@ -326,20 +358,20 @@ function buildDocument(raw, opts, refsByKey, assets) {
     body += pageBreakPara();
   }
 
-  const renderDoc = (doc) => renderBlocks(M.parseDoc(doc, doc.markdown, anchors, refId), refsByKey, ctx.bm, ctx);
+  const renderDoc = (doc, blocks) => renderBlocks(blocks, refsInline, ctx.bm, ctx);
 
-  body += renderDoc(docs[0]);
+  body += renderDoc(docs[0], blocksByDoc[0]);
   for (let i = 1; i < docs.length; i++) {
     const doc = docs[i];
     body += pageBreakPara();
     if (doc.level === 1 && doc.id !== refId) {
       // 章级文档：标题原样保留「第N章 题名」（与思源一致的静态编号），只套 Heading1
-      body += renderHeading(doc.title, 1);
+      body += renderHeading(doc.title, 1, ctx.stripHeadingNum);
       ctx.seenH1 = true;
     } else {
-      body += renderDocHeading(doc.title);
+      body += renderDocHeading(doc.title, ctx.stripHeadingNum);
     }
-    body += renderDoc(doc);
+    body += renderDoc(doc, blocksByDoc[i]);
   }
 
   const sect = `<w:sectPr>
@@ -352,7 +384,8 @@ function buildDocument(raw, opts, refsByKey, assets) {
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
   xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
   xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
-  xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+  xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"
+  xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
   <w:body>${body}${sect}</w:body>
 </w:document>`;
 

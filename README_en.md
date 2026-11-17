@@ -25,7 +25,7 @@ Click the `iconExport` button in the top bar, or press `Shift+Alt+P` and search 
 
 ## Known limits
 
-- **No OMML output.** Formulas are rendered as lightweight runs (sub/superscript, Greek letters, `\frac`, `\sqrt`). Matrices, multi-line alignment and large operators degrade to linear text.
+- **OMML subset.** Inline `$...$` and block `$$...$$` become native Word OMML `<m:oMath>` objects via a hand-written pure-JS LaTeX→OMML converter (variables/digits/Greek/operators, single or double sub/superscript, fractions, roots, accents, upright `\mathrm`/`\text`, parenthesis/bar delimiter groups, `\left\{…\right.` brace, `matrix/cases` two-row `eqArr`, grouped-bracket sub/superscript). Large integral/sum limits, multi-column true matrices and multi-row alignment are out of subset; unsupported commands drop the command name, and empty parses fall back to linear runs. Real WPS/Word editability needs on-machine review (this host has no Office; only structural validation was run).
 - Images support PNG / JPEG / GIF / WebP only.
 - Caption numbers are re-sequenced by Word on F9: "表 4-1" becomes "表 3", consistently with the cross-references but different from the source numbering.
 - Footnote definition lines (`[^1]: …`) are kept as visible text for now.

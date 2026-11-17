@@ -108,6 +108,15 @@ function buildInline(text, refs, size, baseBold, mono, refsByKey, imgHook) {
   return out.join("");
 }
 
+const KIND_CODE = { "表": "tbl", "图": "fig", "式": "eq" };
+// 题注/公式编号 -> 稳定书签键。思源编号是静态文本，按「标签+编号」建书签才能让
+// 交叉引用（REF）跨文档命中同一条题注；用块 ID 时同一编号在多篇文档里会撞名。
+function capKey(kind, num) {
+  return (KIND_CODE[kind] || "x") + "_" + String(num == null ? "" : num).replace(/-/g, "_");
+}
+function capBmName(kind, num) { return "bkmk_cap_" + capKey(kind, num); }
+const CAP_LABEL_RE = /^(表|图|式)\s*([0-9]+(?:-[0-9]+)?)\s*$/;
+
 function linkPass(clean, refs, size, baseBold, mono, refsByKey) {
   if (!clean) return "";
   let out = [];
@@ -127,7 +136,15 @@ function linkPass(clean, refs, size, baseBold, mono, refsByKey) {
       if (seg.url.startsWith("zotero://")) {
         out.push(buildZoteroCite(seg.label, seg.url, refsByKey, size));
       } else if (seg.url.startsWith("#")) {
-        out.push(fieldRuns(`REF ${bkmkName(seg.url.slice(1))} \\h`, seg.label, { size }));
+        // 交叉引用：按「表/图/式 + 编号」命中题注书签；没有对应题注就保留普通文本，
+        // 不生成 REF 域，避免 F9 刷新后显示「错误！未定义书签。」
+        const cm = CAP_LABEL_RE.exec(seg.label.trim());
+        const caps = refs && refs.__caps;
+        if (cm && caps && caps.has(capKey(cm[1], cm[2]))) {
+          out.push(fieldRuns(`REF ${capBmName(cm[1], cm[2])} \\h`, seg.label, { size }));
+        } else {
+          out.push(marksXml(seg.label, refs, size, baseBold, mono, refsByKey));
+        }
       } else if (seg.url.startsWith("http")) {
         out.push(runXml(seg.label, { size, color: "0563C1" }));
       } else {
@@ -223,9 +240,9 @@ function mathAndPlain(seg, size, bold, mono) {
   let x = "";
   for (const f of parts) {
     if (f.startsWith("$") && f.endsWith("$") && f.length > 2) {
-      // 轻量公式渲染：上下标走 Word 上下标 run，希腊字母/常用符号转字符
-      // （完整 OMML 见 README「已知边界」；此处至少保证 A_1 不再显示成 "$A_1$" 原文）
-      x += mathXml(f.slice(1, -1), { size, bold, mono });
+      // 优先转 Word 原生 OMML 公式对象；解析为空时回退轻量文本 run
+      const omml = mathOmml(f.slice(1, -1));
+      x += omml || mathXml(f.slice(1, -1), { size, bold, mono });
     } else if (f) {
       x += runXml(f, { size, bold, mono });
     }
@@ -313,6 +330,192 @@ function latexFragments(src) {
   return frags;
 }
 
+// ---------------- LaTeX -> OMML（Word 原生公式对象） ----------------
+// 子集覆盖本稿公式：变量/数字/希腊字母/运算符、上下标与双标、分数、根号、
+// 帽/上划线、正体组、括号/竖线定界组、matrix/cases 多行阵列、\left/\right 定界符。
+// 未识别命令跳过命令名保留后续；解析为空时由调用方回退普通文本 run。
+function ommlRun(text, upright) {
+  const rpr = upright ? "<m:rPr><m:sty m:val=\"normal\"/></m:rPr>" : "";
+  return `<m:r>${rpr}<m:t xml:space="preserve">${esc(text)}</m:t></m:r>`;
+}
+
+// 配对括号/竖线内部（按深度配对）
+function readDelim(s, i, open, close) {
+  let depth = 1, j = i + 1, buf = "";
+  while (j < s.length && depth > 0) {
+    if (s[j] === close) {
+      depth -= 1;
+      if (depth === 0) { j += 1; break; }
+    } else if (s[j] === open) {
+      depth += 1;
+    }
+    if (depth > 0) buf += s[j];
+    j += 1;
+  }
+  return { value: buf, next: j };
+}
+
+// 读取 \left/\right 后的定界字符（\{ 取 {，. 表示空端）
+function readDelimChar(s, i) {
+  if (s[i] === "\\") return { chr: s[i + 1] || ".", next: i + 2 };
+  return { chr: s[i] || ".", next: i + 1 };
+}
+
+function delimNode(beg, end, inner) {
+  const pr = `<m:dPr><m:begChr m:val="${esc(beg)}"/><m:endChr m:val="${esc(end)}"/></m:dPr>`;
+  return `<m:d>${pr}<m:e>${inner}</m:e></m:d>`;
+}
+
+function ommlAtom(s, i, up) {
+  const ch = s[i];
+  // 括号 / 竖线定界组整体作为一个基元（便于后续上下标绑定到整组）
+  if (ch === "(" || ch === "|") {
+    const close = ch === "(" ? ")" : "|";
+    const g = readDelim(s, i, ch, close);
+    return { node: delimNode(ch, close, ommlSeq(g.value, up)), next: g.next };
+  }
+  if (ch === "{") {
+    const g = readGroup(s, i);
+    return { node: ommlSeq(g.value, up), next: g.next };
+  }
+  if (ch === "\\") {
+    let k = i + 1;
+    while (k < s.length && /[A-Za-z]/.test(s[k])) k += 1;
+    const name = s.slice(i + 1, k);
+    if (name === "frac") {
+      const a = readGroup(s, k), b = readGroup(s, a.next);
+      return {
+        node: `<m:f><m:fPr><m:type m:val="bar"/></m:fPr><m:num>${ommlSeq(a.value, up)}</m:num><m:den>${ommlSeq(b.value, up)}</m:den></m:f>`,
+        next: b.next,
+      };
+    }
+    if (name === "sqrt") {
+      const a = readGroup(s, k);
+      return {
+        node: `<m:rad><m:radPr><m:degHide m:val="1"/></m:radPr><m:deg/><m:e>${ommlSeq(a.value, up)}</m:e></m:rad>`,
+        next: a.next,
+      };
+    }
+    if (name === "hat" || name === "bar" || name === "overline") {
+      const a = readGroup(s, k);
+      const chr = name === "hat" ? "^" : name === "bar" ? "¯" : "‾";
+      return {
+        node: `<m:acc><m:accPr><m:chr m:val="${chr}"/></m:accPr><m:e>${ommlSeq(a.value, up)}</m:e></m:acc>`,
+        next: a.next,
+      };
+    }
+    if (name === "text" || name === "mathrm" || name === "mathbf" || name === "operatorname") {
+      const a = readGroup(s, k);
+      return { node: ommlSeq(a.value, true), next: a.next };
+    }
+    // 多行阵列：\begin{matrix}/\begin{cases} ... \\ 行 ... \end{...}
+    if (name === "begin") {
+      const envG = readGroup(s, k);
+      const env = envG.value;
+      const endTag = `\\end{${env}}`;
+      const ei = s.indexOf(endTag, envG.next);
+      const inner = ei < 0 ? s.slice(envG.next) : s.slice(envG.next, ei);
+      const rows = inner.split(/\\\\/);
+      const es = rows.map((r) => `<m:e>${ommlSeq(r, up)}</m:e>`).join("");
+      const next = ei < 0 ? s.length : ei + endTag.length;
+      return { node: `<m:eqArr>${es}</m:eqArr>`, next };
+    }
+    if (name === "end") {
+      const g = readGroup(s, k);
+      return { node: "", next: g.next };
+    }
+    // \left { ... \right . 定界符包裹整段
+    if (name === "left") {
+      const bc = readDelimChar(s, k);
+      const ri = s.indexOf("\\right", bc.next);
+      let ec = { chr: ".", next: bc.next };
+      let innerEnd = ri;
+      if (ri >= 0) {
+        ec = readDelimChar(s, ri + 6);
+        innerEnd = ri;
+      }
+      const inner = ommlSeq(s.slice(bc.next, innerEnd), up);
+      return { node: delimNode(bc.chr, ec.chr, inner), next: ri >= 0 ? ec.next : innerEnd };
+    }
+    if (name === "right") {
+      const ec = readDelimChar(s, k);
+      return { node: "", next: ec.next };
+    }
+    if (GREEK[name]) return { node: ommlRun(GREEK[name], up), next: k };
+    if (SYMBOLS[name] !== undefined) return { node: ommlRun(SYMBOLS[name], up), next: k };
+    // 转义花括号/括号字面（\{、\}）；未知命令名丢弃
+    if (!name) {
+      const c = s[i + 1];
+      if (c === "{" || c === "}" || c === "|" || c === "(" || c === ")") {
+        return { node: ommlRun(c, up), next: i + 2 };
+      }
+      return { node: "", next: i + 1 };
+    }
+    return { node: "", next: k };
+  }
+  // 连续字母/数字合并为一个基元 run（NH、SSE 等整体作为上下标的 e）
+  let j = i;
+  while (j < s.length && /[A-Za-z0-9]/.test(s[j])) j += 1;
+  if (j > i) return { node: ommlRun(s.slice(i, j), up), next: j };
+  return { node: ommlRun(ch, up), next: i + 1 };
+}
+
+function ommlSupSub(eNode, s, i, up) {
+  let sub = null, sup = null;
+  while (s[i] === "_" || s[i] === "^") {
+    const isSub = s[i] === "_";
+    i += 1;
+    while (s[i] === " " || s[i] === "~") i += 1;
+    const g = readGroup(s, i);
+    const content = ommlSeq(g.value, up);
+    i = g.next;
+    if (isSub) sub = content; else sup = content;
+  }
+  if (sub && sup) {
+    return { node: `<m:sSubSup><m:e>${eNode}</m:e><m:sub>${sub}</m:sub><m:sup>${sup}</m:sup></m:sSubSup>`, next: i };
+  }
+  if (sub) {
+    return { node: `<m:sSub><m:sSubPr><m:ctrlPr/></m:sSubPr><m:e>${eNode}</m:e><m:sub>${sub}</m:sub></m:sSub>`, next: i };
+  }
+  if (sup) {
+    return { node: `<m:sSup><m:sSupPr><m:ctrlPr/></m:sSupPr><m:e>${eNode}</m:e><m:sup>${sup}</m:sup></m:sSup>`, next: i };
+  }
+  return { node: eNode, next: i };
+}
+
+function ommlSeq(src, up) {
+  const s = String(src == null ? "" : src).replace(/\\[,;:!]/g, " ");
+  let out = "", i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    if (ch === "{" || ch === "}") { i += 1; continue; }
+    const atom = ommlAtom(s, i, up);
+    if (!atom.node) { i = atom.next; continue; }
+    // 基元后先跳过空白再判定上下标：命令与 _/^ 间的空格不打断绑定
+    let j = atom.next;
+    while (s[j] === " " || s[j] === "~") j += 1;
+    if (s[j] === "_" || s[j] === "^") {
+      const ss = ommlSupSub(atom.node, s, j, up);
+      out += ss.node;
+      i = ss.next;
+      continue;
+    }
+    out += atom.node;
+    if (j > atom.next) out += ommlRun(s.slice(atom.next, j), up);
+    i = atom.next;
+  }
+  return out;
+}
+
+// 行内公式 -> <m:oMath>；块级由 builder 再包 <m:oMathPara>。
+// 解析为空返回空串，调用方回退普通文本。
+function mathOmml(latex) {
+  const body = ommlSeq(latex);
+  if (!body) return "";
+  return `<m:oMath xmlns:m="${M_NS}">${body}</m:oMath>`;
+}
+
+// 旧轻量文本降级（OMML 失败时回退用）
 function mathXml(latex, opts) {
   const o = opts || {};
   return latexFragments(latex)
@@ -352,6 +555,6 @@ function buildZoteroCite(label, url, refsByKey, size) {
 
 module.exports = {
   esc, rPr, runXml, pPr, fieldRuns, bookmarkStart, bookmarkEnd,
-  buildInline, bkmkName, mathXml, latexFragments, drawingXml,
+  buildInline, bkmkName, capKey, capBmName, mathXml, mathOmml, latexFragments, drawingXml,
   CN_SONG, CN_HEI, EN_FONT, MONO, CM, EMU_CM, M_NS, fflate,
 };
