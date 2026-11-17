@@ -14,7 +14,7 @@
 | 正文 | 宋体 + Times New Roman，小四 12pt，1.5 倍行距，首行缩进 2 字符 |
 | 表格 | 三线表（顶/底 sz12、表头 sz6），无竖线无内部横线；**空表与空单元格完整保留**，列数按原文不补齐 |
 | 图片 | 从内核取二进制写入 `word/media/`，真嵌入；超版心等比缩放；取不到才降级为占位文字 |
-| 题注 | `表 N` / `图 N` / `式 N` 段落 → `SEQ 表\|图\|式 \* ARABIC` 域 + 书签，题名在书签外 |
+| 题注 | `表 N` / `图 N` / `式 N` 段落 → 章号 `STYLEREF "Heading 1" \s` + 序号 `SEQ 表\|图\|式 \* ARABIC \s 1` 域 + 书签，题名在书签外 |
 | 交叉引用 | `[表 4-1](#块ID)` → `REF bkmk_xxx \h` 域；F9 后只刷新编号，不会把题名一起带进正文 |
 | Zotero 引用 | `zotero://…/items/KEY` → `ADDIN ZOTERO_ITEM CSL_CITATION` 域（含完整 CSL itemData） |
 | Zotero 书目 | 文末条目 → 跨段 `ADDIN ZOTERO_BIBL` 域 + `zot_<KEY>` 书签 |
