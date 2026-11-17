@@ -33,7 +33,9 @@ function parseChapterNo(text) {
 // level 1 -> Heading1（标题编号是思源静态文本，只套样式）
 // 章标题段末追加一个隐藏的 `SEQ 章 \r N` 计数器：题注用 `SEQ 章 \c` 取章号，
 // 这样「表 4-1」是整段域、F9 后章号仍是 4（每章显式重置，不会因为缺章被重排）。
-function renderHeading(text, level, strip) {
+// forcedChap：标题里解析不到「第N章」时（如「About」「附录」），用本篇第一条题注的章号兜底，
+// 保证这一章下的题注 `SEQ 章 \c` 取到的是本章真实章号，而不是上一章的残留值。
+function renderHeading(text, level, strip, forcedChap) {
   const lv = Math.min(Math.max(level, 1), 5);
   const size = HEADING_SIZES[lv] || 12;
   let clean = M.stripHtml(text).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
@@ -42,9 +44,11 @@ function renderHeading(text, level, strip) {
   // 标题编号保留思源原文（静态文本），只套 Heading 样式，不绑 Word 列表。
   let inner = D.runXml(clean, { cn: D.CN_HEI, en: D.CN_HEI, size, bold: true, color: "000000" });
   if (lv === 1) {
-    const ch = parseChapterNo(clean);
-    // 缓存文本留空：更新前后都不产生可见字符，标题里不会多出数字
-    inner += D.fieldRuns(ch != null ? `SEQ 章 \\* ARABIC \\r ${ch}` : "SEQ 章 \\* ARABIC", "", { size, hidden: true });
+    const parsed = parseChapterNo(clean);
+    const ch = parsed != null ? parsed : (typeof forcedChap === "number" ? forcedChap : null);
+    // \h = 隐藏域结果（即使勾选「显示隐藏文字」也不显示），配合 w:vanish 双保险；
+    // 缓存文本留空，标题里任何情况下都不会多出数字
+    inner += D.fieldRuns(ch != null ? `SEQ 章 \\* ARABIC \\r ${ch} \\h` : "SEQ 章 \\* ARABIC \\h", "", { size, hidden: true });
   }
   return para(
     {
@@ -122,8 +126,10 @@ function renderMath(code, num, anchor, bmId, ctx) {
   const { chap, seq } = splitChapSeq(num);
   inner += D.runXml("(", { size: 12 });
   if (chap) {
-    // 同题注：章号取章标题里隐藏的 `SEQ 章 \r N`，整段编号都是域
-    inner += D.fieldRuns(`SEQ 章 \\c`, chap, { size: 12 });
+    // 同题注：章号取章标题里隐藏的 `SEQ 章 \r N`，整段编号都是域；
+    // 字母章号、或本条题注出现在任何章标题之前（`\c` 无前置序号可重复）时退回静态
+    if (/^[0-9]+$/.test(chap) && (!ctx || ctx.chapInserted)) inner += D.fieldRuns(`SEQ 章 \\c`, chap, { size: 12 });
+    else inner += D.runXml(chap, { size: 12 });
     inner += D.runXml("-", { size: 12 });
   }
   inner += D.fieldRuns(`SEQ \u5f0f \\* ARABIC \\s 1`, seq, { size: 12 });
@@ -197,8 +203,9 @@ function renderCaption(kind, num, title, anchor, bmId, ctx) {
   inner += D.runXml(kind + " ", { size: 12, bold: true });
   if (chap) {
     // 章号是域：取本章标题里隐藏的 `SEQ 章 \r N`（`\c` = 重复最近序号）。
-    // 「表 4-1」整段都是域结果，F9 后章号仍精确等于思源原章号。
-    inner += D.fieldRuns(`SEQ 章 \\c`, chap, { size: 12, bold: true });
+    // 字母章号（附录 A-1）Word 的 SEQ 只能计数阿拉伯数字；题注出现在章标题之前时同理退回静态。
+    if (/^[0-9]+$/.test(chap) && (!ctx || ctx.chapInserted)) inner += D.fieldRuns(`SEQ 章 \\c`, chap, { size: 12, bold: true });
+    else inner += D.runXml(chap, { size: 12, bold: true });
     inner += D.runXml("-", { size: 12, bold: true });
   }
   inner += D.fieldRuns(`SEQ ${kind} \\* ARABIC \\s 1`, seq, { size: 12, bold: true });
@@ -285,8 +292,8 @@ function renderBlocks(blocks, refsByKey, bmId, ctx) {
     const b = blocks[n];
     switch (b.type) {
       case "heading": {
-        out += renderHeading(b.text, b.level, ctx && ctx.stripHeadingNum);
-        if (ctx && b.level === 1) ctx.seenH1 = true;
+        out += renderHeading(b.text, b.level, ctx && ctx.stripHeadingNum, ctx && ctx.docChap);
+        if (ctx && b.level === 1) { ctx.seenH1 = true; ctx.chapInserted = true; }
         break;
       }
       case "body": out += renderBody(b.text, refsByKey, b.listItem, ctx); break;
@@ -376,7 +383,20 @@ function buildDocument(raw, opts, refsByKey, assets) {
     body += pageBreakPara();
   }
 
-  const renderDoc = (doc, blocks) => renderBlocks(blocks, refsInline, ctx.bm, ctx);
+  // 本篇第一条带章号的题注 → 该章「第N章」解析不到时（About/附录等）用它兜底 \r
+  const docChapOf = (blocks) => {
+    for (const b of blocks) {
+      const num = b.type === "caption" ? b.num : (b.type === "math" ? b.num : null);
+      if (!num) continue;
+      const c = splitChapSeq(num).chap;
+      if (c && /^[0-9]+$/.test(c)) return parseInt(c, 10);
+    }
+    return null;
+  };
+  const renderDoc = (doc, blocks) => {
+    ctx.docChap = docChapOf(blocks);
+    return renderBlocks(blocks, refsInline, ctx.bm, ctx);
+  };
 
   body += renderDoc(docs[0], blocksByDoc[0]);
   for (let i = 1; i < docs.length; i++) {
@@ -384,8 +404,9 @@ function buildDocument(raw, opts, refsByKey, assets) {
     body += pageBreakPara();
     if (doc.level === 1 && doc.id !== refId) {
       // 章级文档：标题原样保留「第N章 题名」（与思源一致的静态编号），只套 Heading1
-      body += renderHeading(doc.title, 1, ctx.stripHeadingNum);
+      body += renderHeading(doc.title, 1, ctx.stripHeadingNum, docChapOf(blocksByDoc[i]));
       ctx.seenH1 = true;
+      ctx.chapInserted = true;
     } else {
       body += renderDocHeading(doc.title, ctx.stripHeadingNum);
     }

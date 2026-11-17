@@ -3447,7 +3447,7 @@
         const m = /第\s*([0-9]+|[一二三四五六七八九十]+)\s*章/.exec(text);
         return m ? cnNum(m[1]) : null;
       }
-      function renderHeading(text, level, strip) {
+      function renderHeading(text, level, strip, forcedChap) {
         const lv = Math.min(Math.max(level, 1), 5);
         const size = HEADING_SIZES[lv] || 12;
         let clean = M.stripHtml(text).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\*\*/g, "").trim();
@@ -3455,8 +3455,9 @@
         if (!clean) return "";
         let inner = D.runXml(clean, { cn: D.CN_HEI, en: D.CN_HEI, size, bold: true, color: "000000" });
         if (lv === 1) {
-          const ch = parseChapterNo(clean);
-          inner += D.fieldRuns(ch != null ? `SEQ \u7AE0 \\* ARABIC \\r ${ch}` : "SEQ \u7AE0 \\* ARABIC", "", { size, hidden: true });
+          const parsed = parseChapterNo(clean);
+          const ch = parsed != null ? parsed : typeof forcedChap === "number" ? forcedChap : null;
+          inner += D.fieldRuns(ch != null ? `SEQ \u7AE0 \\* ARABIC \\r ${ch} \\h` : "SEQ \u7AE0 \\* ARABIC \\h", "", { size, hidden: true });
         }
         return para(
           {
@@ -3523,7 +3524,8 @@
         const { chap, seq } = splitChapSeq(num);
         inner += D.runXml("(", { size: 12 });
         if (chap) {
-          inner += D.fieldRuns(`SEQ \u7AE0 \\c`, chap, { size: 12 });
+          if (/^[0-9]+$/.test(chap) && (!ctx || ctx.chapInserted)) inner += D.fieldRuns(`SEQ \u7AE0 \\c`, chap, { size: 12 });
+          else inner += D.runXml(chap, { size: 12 });
           inner += D.runXml("-", { size: 12 });
         }
         inner += D.fieldRuns(`SEQ \u5F0F \\* ARABIC \\s 1`, seq, { size: 12 });
@@ -3587,7 +3589,8 @@
         inner += start;
         inner += D.runXml(kind + " ", { size: 12, bold: true });
         if (chap) {
-          inner += D.fieldRuns(`SEQ \u7AE0 \\c`, chap, { size: 12, bold: true });
+          if (/^[0-9]+$/.test(chap) && (!ctx || ctx.chapInserted)) inner += D.fieldRuns(`SEQ \u7AE0 \\c`, chap, { size: 12, bold: true });
+          else inner += D.runXml(chap, { size: 12, bold: true });
           inner += D.runXml("-", { size: 12, bold: true });
         }
         inner += D.fieldRuns(`SEQ ${kind} \\* ARABIC \\s 1`, seq, { size: 12, bold: true });
@@ -3654,8 +3657,11 @@
           const b = blocks[n];
           switch (b.type) {
             case "heading": {
-              out += renderHeading(b.text, b.level, ctx && ctx.stripHeadingNum);
-              if (ctx && b.level === 1) ctx.seenH1 = true;
+              out += renderHeading(b.text, b.level, ctx && ctx.stripHeadingNum, ctx && ctx.docChap);
+              if (ctx && b.level === 1) {
+                ctx.seenH1 = true;
+                ctx.chapInserted = true;
+              }
               break;
             }
             case "body":
@@ -3749,14 +3755,27 @@
           if (opts.coverDate) body += para({ jc: "center" }, D.runXml("\u53D1\u5E03\u65E5\u671F\uFF1A" + opts.coverDate, { size: 14 }));
           body += pageBreakPara();
         }
-        const renderDoc = (doc, blocks) => renderBlocks(blocks, refsInline, ctx.bm, ctx);
+        const docChapOf = (blocks) => {
+          for (const b of blocks) {
+            const num = b.type === "caption" ? b.num : b.type === "math" ? b.num : null;
+            if (!num) continue;
+            const c = splitChapSeq(num).chap;
+            if (c && /^[0-9]+$/.test(c)) return parseInt(c, 10);
+          }
+          return null;
+        };
+        const renderDoc = (doc, blocks) => {
+          ctx.docChap = docChapOf(blocks);
+          return renderBlocks(blocks, refsInline, ctx.bm, ctx);
+        };
         body += renderDoc(docs[0], blocksByDoc[0]);
         for (let i = 1; i < docs.length; i++) {
           const doc = docs[i];
           body += pageBreakPara();
           if (doc.level === 1 && doc.id !== refId) {
-            body += renderHeading(doc.title, 1, ctx.stripHeadingNum);
+            body += renderHeading(doc.title, 1, ctx.stripHeadingNum, docChapOf(blocksByDoc[i]));
             ctx.seenH1 = true;
+            ctx.chapInserted = true;
           } else {
             body += renderDocHeading(doc.title, ctx.stripHeadingNum);
           }
